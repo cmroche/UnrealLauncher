@@ -1,0 +1,33 @@
+<idea-plugin>
+  <id>com.cmroche.unrealhelper</id>
+  <name>UnrealHelper</name>
+  <version>0.1.0</version>
+  <vendor>com.cmroche</vendor>
+
+  <description><![CDATA[
+    UnrealHelper adds Rider toolbar workflows for Unreal Engine launch arguments, build operations, and quick launch tasks.
+  ]]></description>
+
+  <depends>com.intellij.modules.rider</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <projectService serviceImplementation="com.cmroche.unrealhelper.settings.UnrealHelperSettings"/>
+    <projectConfigurable
+        parentId="tools"
+        instance="com.cmroche.unrealhelper.settings.UnrealHelperConfigurable"
+        id="com.cmroche.unrealhelper.settings"
+        displayName="UnrealHelper"/>
+  </extensions>
+
+  <actions>
+    <group id="UnrealHelper.MainToolbarGroup" text="UnrealHelper" popup="false">
+      <add-to-group group-id="MainToolbarRight" anchor="last"/>
+      <action
+          id="UnrealHelper.GlobalArgsToolbarAction"
+          class="com.cmroche.unrealhelper.ui.GlobalArgsToolbarAction"
+          text="UnrealHelper Args"
+          description="Edit UnrealHelper global launch arguments"/>
+    </group>
+  </actions>
+</idea-plugin>
+
