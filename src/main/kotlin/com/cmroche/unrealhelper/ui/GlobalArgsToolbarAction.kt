@@ -1,6 +1,7 @@
 package com.cmroche.unrealhelper.ui
 
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
+import com.intellij.icons.AllIcons
 import com.intellij.ide.DataManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -11,12 +12,15 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
-import java.awt.BorderLayout
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.fields.ExtendableTextComponent
+import com.intellij.ui.components.fields.ExtendableTextField
+import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
 import javax.swing.DefaultComboBoxModel
-import javax.swing.JButton
 import javax.swing.JComponent
-import javax.swing.JPanel
+import javax.swing.JTextField
+import javax.swing.plaf.basic.BasicComboBoxEditor
 import javax.swing.event.PopupMenuEvent
 import javax.swing.event.PopupMenuListener
 
@@ -34,16 +38,35 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
 
     override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
         val comboBox = ComboBox<String>()
-        val editButton = JButton("Edit")
-        val panel = JPanel(BorderLayout(4, 0))
         var refreshing = false
 
-        comboBox.isEditable = true
-        comboBox.prototypeDisplayValue = "-game -windowed -resx=1080 -resy=1920 -log -newconsole"
-        comboBox.preferredSize = Dimension(440, comboBox.preferredSize.height)
-        comboBox.toolTipText = "UnrealHelper global launch arguments"
+        fun project(): Project? = projectFor(comboBox)
 
-        fun project(): Project? = projectFor(panel)
+        comboBox.isEditable = true
+        comboBox.isOpaque = false
+        comboBox.background = toolbarBackground()
+        comboBox.editor = object : BasicComboBoxEditor() {
+            override fun createEditorComponent(): JTextField =
+                ExtendableTextField().also { textField ->
+                    textField.isOpaque = false
+                    textField.background = toolbarBackground()
+                    textField.border = null
+                    textField.toolTipText = "UnrealHelper global launch arguments"
+                    textField.addExtension(
+                        ExtendableTextComponent.Extension.create(
+                            AllIcons.Actions.ArrowExpand,
+                            AllIcons.Actions.ArrowExpand,
+                            "Open the expanded global launch arguments editor",
+                        ) {
+                            val currentProject = project() ?: return@create
+                            editArgs(currentProject, comboBox)
+                        },
+                    )
+                }
+        }
+        comboBox.prototypeDisplayValue = "-game -windowed -resx=1080 -resy=1920 -log -newconsole"
+        comboBox.preferredSize = Dimension(CommandLineInputWidth, comboBox.preferredSize.height)
+        comboBox.toolTipText = "UnrealHelper global launch arguments"
 
         fun refresh() {
             val currentProject = project() ?: return
@@ -73,15 +96,7 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
             currentProject.service<UnrealHelperSettings>().setActiveCommandLine(commandLine)
         }
 
-        editButton.toolTipText = "Open the expanded global launch arguments editor"
-        editButton.addActionListener {
-            val currentProject = project() ?: return@addActionListener
-            editArgs(currentProject, comboBox)
-        }
-
-        panel.add(comboBox, BorderLayout.CENTER)
-        panel.add(editButton, BorderLayout.EAST)
-        return panel
+        return comboBox
     }
 
     private fun editArgs(project: Project, comboBox: ComboBox<String>?) {
@@ -97,5 +112,11 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
     private fun projectFor(component: JComponent): Project? {
         val dataContext = DataManager.getInstance().getDataContext(component)
         return CommonDataKeys.PROJECT.getData(dataContext)
+    }
+
+    private companion object {
+        private const val CommandLineInputWidth = 330
+
+        fun toolbarBackground() = JBColor.namedColor("MainToolbar.background", UIUtil.getPanelBackground())
     }
 }

@@ -22,7 +22,7 @@
 
   <actions>
     <group id="UnrealHelper.MainToolbarGroup" text="UnrealHelper" popup="false">
-      <add-to-group group-id="MainToolbarRight" anchor="last"/>
+      <add-to-group group-id="MainToolbarCenter" anchor="last"/>
       <action
           id="UnrealHelper.GlobalArgsToolbarAction"
           class="com.cmroche.unrealhelper.ui.GlobalArgsToolbarAction"
