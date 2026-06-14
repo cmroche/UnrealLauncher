@@ -21,6 +21,10 @@ dependencies {
         rider("2026.1.2") {
             useInstaller = false
         }
+        bundledPlugin("com.intellij.cidr.debugger")
+        bundledPlugin("com.jetbrains.rider-cpp")
+        bundledModule("intellij.cidr.execution")
+        bundledModule("intellij.cidr.projectModel")
         testFramework(TestFrameworkType.Platform)
     }
 
