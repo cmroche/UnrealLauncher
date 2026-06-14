@@ -1,15 +1,38 @@
 package com.cmroche.unrealhelper.settings
 
+import com.cmroche.unrealhelper.discovery.DiscoveredUnrealTarget
+import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryResult
+import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
+import java.nio.file.Path
+import java.nio.file.Paths
 
 class UnrealHelperSettingsState {
+    var uprojectPath: String = ""
+    var workspaceRoot: String = ""
+    var packageDirectory: String = ""
+    var selectedTargetTypes: MutableList<String> = mutableListOf(
+        UnrealTargetType.Game.name,
+        UnrealTargetType.Client.name,
+        UnrealTargetType.Server.name,
+    )
+    var selectedPlatforms: MutableList<String> = mutableListOf()
+    var discoveredTargets: MutableList<UnrealTargetState> = mutableListOf()
+    var discoveredPlatforms: MutableList<String> = mutableListOf()
+    var discoveryWarnings: MutableList<String> = mutableListOf()
     var activeCommandLine: String = ""
     var savedCommandLines: MutableList<String> = mutableListOf()
     var recentCommandLines: MutableList<String> = mutableListOf()
     var applyToRunDebug: Boolean = true
+}
+
+class UnrealTargetState {
+    var name: String = ""
+    var type: String = UnrealTargetType.Game.name
+    var path: String = ""
 }
 
 @Service(Service.Level.PROJECT)
@@ -51,12 +74,47 @@ class UnrealHelperSettings : PersistentStateComponent<UnrealHelperSettingsState>
             .filter { it.isNotEmpty() }
             .distinct()
 
+    fun applyDiscoveryResult(result: UnrealProjectDiscoveryResult) {
+        state.workspaceRoot = result.workspaceRoot.orEmpty()
+        state.uprojectPath = result.uprojectPath.orEmpty()
+        state.discoveredTargets = result.targets.map { it.toState() }.toMutableList()
+        state.discoveredPlatforms = result.platforms.toMutableList()
+        state.discoveryWarnings = result.warnings.toMutableList()
+
+        if (state.packageDirectory.isBlank()) {
+            state.packageDirectory = defaultPackageDirectory(state.workspaceRoot)
+        }
+        if (state.selectedPlatforms.isEmpty() && result.platforms.isNotEmpty()) {
+            state.selectedPlatforms = result.platforms.toMutableList()
+        }
+    }
+
+    fun effectivePackageDirectory(): String = state.packageDirectory.ifBlank {
+        defaultPackageDirectory(state.workspaceRoot)
+    }
+
     companion object {
         private const val MaxSavedCommandLines = 20
         private const val MaxRecentCommandLines = 10
+
+        fun defaultPackageDirectory(workspaceRoot: String): String =
+            if (workspaceRoot.isBlank()) {
+                "Packages"
+            } else {
+                Paths.get(workspaceRoot).resolve("Packages").normalize().toString()
+            }
+
+        fun defaultPackageDirectory(workspaceRoot: Path): String =
+            workspaceRoot.resolve("Packages").normalize().toString()
 
         private fun moveToFront(values: List<String>, value: String, maxSize: Int): List<String> =
             (listOf(value) + values.filterNot { it == value }).take(maxSize)
     }
 }
 
+private fun DiscoveredUnrealTarget.toState(): UnrealTargetState =
+    UnrealTargetState().also {
+        it.name = name
+        it.type = type.name
+        it.path = path
+    }

@@ -1,19 +1,35 @@
 package com.cmroche.unrealhelper.settings
 
 import com.cmroche.unrealhelper.args.CommandLineArguments
+import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryService
+import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import com.intellij.openapi.components.service
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.components.JBTextField
 import java.awt.BorderLayout
+import java.awt.FlowLayout
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
+import java.awt.Insets
+import javax.swing.BorderFactory
+import javax.swing.BoxLayout
+import javax.swing.JButton
 import javax.swing.JCheckBox
 import javax.swing.JComponent
-import javax.swing.JLabel
 import javax.swing.JPanel
 
 class UnrealHelperConfigurable(private val project: Project) : SearchableConfigurable {
     private var rootPanel: JPanel? = null
+    private var uprojectPathField: JBTextField? = null
+    private var workspaceRootField: JBTextField? = null
+    private var packageDirectoryField: JBTextField? = null
+    private var platformsField: JBTextField? = null
+    private var targetTypeCheckboxes: Map<UnrealTargetType, JCheckBox> = emptyMap()
+    private var discoverySummaryArea: JBTextArea? = null
     private var commandLineArea: JBTextArea? = null
     private var applyToRunDebug: JCheckBox? = null
 
@@ -22,25 +38,41 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
     override fun getDisplayName(): String = "UnrealHelper"
 
     override fun createComponent(): JComponent {
-        val area = JBTextArea(10, 72)
-        val checkBox = JCheckBox("Apply global arguments to Rider Run/Debug launches")
-        val panel = JPanel(BorderLayout(0, 8))
+        val content = JPanel()
+        content.layout = BoxLayout(content, BoxLayout.Y_AXIS)
 
-        panel.add(JLabel("Global launch arguments, one option per line:"), BorderLayout.NORTH)
-        panel.add(JBScrollPane(area), BorderLayout.CENTER)
-        panel.add(checkBox, BorderLayout.SOUTH)
+        uprojectPathField = JBTextField()
+        workspaceRootField = JBTextField()
+        packageDirectoryField = JBTextField()
+        platformsField = JBTextField()
+        discoverySummaryArea = JBTextArea(6, 72).also {
+            it.isEditable = false
+        }
+        commandLineArea = JBTextArea(10, 72)
+        applyToRunDebug = JCheckBox("Apply global arguments to Rider Run/Debug launches")
+        targetTypeCheckboxes = UnrealTargetType.entries.associateWith { JCheckBox(it.name) }
 
-        commandLineArea = area
-        applyToRunDebug = checkBox
+        content.add(projectPanel())
+        content.add(discoveryPanel())
+        content.add(targetsPanel())
+        content.add(globalArgsPanel())
+
+        val panel = JPanel(BorderLayout())
+        panel.add(JBScrollPane(content), BorderLayout.CENTER)
         rootPanel = panel
-
         reset()
+
         return panel
     }
 
     override fun isModified(): Boolean {
         val state = project.service<UnrealHelperSettings>().state
-        return commandLineArea?.text != CommandLineArguments.toEditorText(state.activeCommandLine) ||
+        return uprojectPathField?.text != state.uprojectPath ||
+            workspaceRootField?.text != state.workspaceRoot ||
+            packageDirectoryField?.text != project.service<UnrealHelperSettings>().effectivePackageDirectory() ||
+            selectedTargetTypes() != state.selectedTargetTypes ||
+            parseCsv(platformsField?.text.orEmpty()) != state.selectedPlatforms ||
+            commandLineArea?.text != CommandLineArguments.toEditorText(state.activeCommandLine) ||
             applyToRunDebug?.isSelected != state.applyToRunDebug
     }
 
@@ -48,20 +80,160 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         val settings = project.service<UnrealHelperSettings>()
         val state = settings.state
 
+        state.uprojectPath = uprojectPathField?.text.orEmpty().trim()
+        state.workspaceRoot = workspaceRootField?.text.orEmpty().trim()
+        state.packageDirectory = packageDirectoryField?.text.orEmpty().trim()
+        state.selectedTargetTypes = selectedTargetTypes().toMutableList()
+        state.selectedPlatforms = parseCsv(platformsField?.text.orEmpty()).toMutableList()
         state.applyToRunDebug = applyToRunDebug?.isSelected ?: true
         settings.setActiveCommandLine(CommandLineArguments.fromEditorText(commandLineArea?.text.orEmpty()))
     }
 
     override fun reset() {
-        val state = project.service<UnrealHelperSettings>().state
+        val settings = project.service<UnrealHelperSettings>()
+        val state = settings.state
+        uprojectPathField?.text = state.uprojectPath
+        workspaceRootField?.text = state.workspaceRoot
+        packageDirectoryField?.text = settings.effectivePackageDirectory()
+        platformsField?.text = state.selectedPlatforms.joinToString(", ")
+        for ((targetType, checkBox) in targetTypeCheckboxes) {
+            checkBox.isSelected = targetType.name in state.selectedTargetTypes
+        }
+        discoverySummaryArea?.text = discoverySummary(state)
         commandLineArea?.text = CommandLineArguments.toEditorText(state.activeCommandLine)
         applyToRunDebug?.isSelected = state.applyToRunDebug
     }
 
     override fun disposeUIResources() {
         rootPanel = null
+        uprojectPathField = null
+        workspaceRootField = null
+        packageDirectoryField = null
+        platformsField = null
+        targetTypeCheckboxes = emptyMap()
+        discoverySummaryArea = null
         commandLineArea = null
         applyToRunDebug = null
     }
-}
 
+    private fun projectPanel(): JPanel {
+        val panel = sectionPanel("Project")
+        val form = JPanel(GridBagLayout())
+        addFormRow(form, 0, ".uproject:", uprojectPathField)
+        addFormRow(form, 1, "Workspace Root:", workspaceRootField)
+        addFormRow(form, 2, "Package Dir:", packageDirectoryField)
+        panel.add(form, BorderLayout.CENTER)
+        return panel
+    }
+
+    private fun discoveryPanel(): JPanel {
+        val panel = sectionPanel("Detection")
+        val refreshButton = JButton("Refresh from Project Files")
+        refreshButton.addActionListener {
+            project.service<UnrealProjectDiscoveryService>().refresh()
+            reset()
+        }
+
+        val top = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0))
+        top.add(refreshButton)
+        panel.add(top, BorderLayout.NORTH)
+        panel.add(JBScrollPane(discoverySummaryArea), BorderLayout.CENTER)
+        return panel
+    }
+
+    private fun targetsPanel(): JPanel {
+        val panel = sectionPanel("Targets And Platforms")
+        val targetPanel = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0))
+        targetTypeCheckboxes.values.forEach(targetPanel::add)
+
+        val form = JPanel(GridBagLayout())
+        val constraints = GridBagConstraints().also {
+            it.gridx = 0
+            it.gridy = 0
+            it.anchor = GridBagConstraints.WEST
+            it.insets = Insets(0, 0, 8, 8)
+        }
+        form.add(JBLabel("Target Types:"), constraints)
+        constraints.gridx = 1
+        constraints.weightx = 1.0
+        constraints.fill = GridBagConstraints.HORIZONTAL
+        form.add(targetPanel, constraints)
+
+        constraints.gridx = 0
+        constraints.gridy = 1
+        constraints.weightx = 0.0
+        constraints.fill = GridBagConstraints.NONE
+        form.add(JBLabel("Platforms:"), constraints)
+        constraints.gridx = 1
+        constraints.weightx = 1.0
+        constraints.fill = GridBagConstraints.HORIZONTAL
+        form.add(platformsField, constraints)
+
+        panel.add(form, BorderLayout.CENTER)
+        return panel
+    }
+
+    private fun globalArgsPanel(): JPanel {
+        val panel = sectionPanel("Global Run/Debug Args")
+        panel.add(JBLabel("Global launch arguments, one option per line:"), BorderLayout.NORTH)
+        panel.add(JBScrollPane(commandLineArea), BorderLayout.CENTER)
+        panel.add(applyToRunDebug, BorderLayout.SOUTH)
+        return panel
+    }
+
+    private fun sectionPanel(title: String): JPanel =
+        JPanel(BorderLayout(0, 8)).also {
+            it.border = BorderFactory.createTitledBorder(title)
+        }
+
+    private fun addFormRow(form: JPanel, row: Int, label: String, field: JBTextField?) {
+        val labelConstraints = GridBagConstraints().also {
+            it.gridx = 0
+            it.gridy = row
+            it.anchor = GridBagConstraints.WEST
+            it.insets = Insets(0, 0, 8, 8)
+        }
+        form.add(JBLabel(label), labelConstraints)
+
+        val fieldConstraints = GridBagConstraints().also {
+            it.gridx = 1
+            it.gridy = row
+            it.weightx = 1.0
+            it.fill = GridBagConstraints.HORIZONTAL
+            it.insets = Insets(0, 0, 8, 0)
+        }
+        form.add(field, fieldConstraints)
+    }
+
+    private fun selectedTargetTypes(): List<String> =
+        targetTypeCheckboxes
+            .filterValues { it.isSelected }
+            .keys
+            .map { it.name }
+
+    private fun discoverySummary(state: UnrealHelperSettingsState): String {
+        val lines = mutableListOf<String>()
+        if (state.discoveredTargets.isEmpty()) {
+            lines += "Targets: none detected"
+        } else {
+            lines += "Targets:"
+            lines += state.discoveredTargets.map { "- ${it.name} (${it.type}) ${it.path}" }
+        }
+
+        lines += "Platforms: ${state.discoveredPlatforms.joinToString(", ").ifBlank { "none detected" }}"
+
+        if (state.discoveryWarnings.isNotEmpty()) {
+            lines += ""
+            lines += "Warnings:"
+            lines += state.discoveryWarnings.map { "- $it" }
+        }
+
+        return lines.joinToString("\n")
+    }
+
+    private fun parseCsv(value: String): List<String> =
+        value.split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+}

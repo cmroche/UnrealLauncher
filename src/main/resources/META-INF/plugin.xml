@@ -12,6 +12,7 @@
 
   <extensions defaultExtensionNs="com.intellij">
     <projectService serviceImplementation="com.cmroche.unrealhelper.settings.UnrealHelperSettings"/>
+    <projectService serviceImplementation="com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryService"/>
     <projectConfigurable
         parentId="tools"
         instance="com.cmroche.unrealhelper.settings.UnrealHelperConfigurable"
@@ -30,4 +31,3 @@
     </group>
   </actions>
 </idea-plugin>
-
