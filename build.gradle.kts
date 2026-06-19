@@ -1,4 +1,6 @@
+import org.gradle.process.CommandLineArgumentProvider
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -45,5 +47,18 @@ kotlin {
 tasks {
     test {
         useJUnit()
+    }
+
+    val runIdeProjectPath = providers.gradleProperty("unrealHelper.runProject")
+        .orElse(
+            providers.systemProperty("user.home").map {
+                "$it/Projects/UnrealEngine/Samples/Games/Lyra/Lyra.uproject"
+            },
+        )
+
+    withType<RunIdeTask>().configureEach {
+        argumentProviders += CommandLineArgumentProvider {
+            listOf(runIdeProjectPath.get())
+        }
     }
 }
