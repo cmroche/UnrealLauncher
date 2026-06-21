@@ -24,6 +24,48 @@ class UnrealRunConfigurationMatcherTest {
     }
 
     @Test
+    fun `configuration compatibility does not require active args`() {
+        val state = unrealState()
+        state.activeCommandLine = ""
+
+        assertTrue(
+            UnrealRunConfigurationMatcher.isLikelyUnrealRunConfiguration(
+                data = matchData(configurationName = "MyGame"),
+                state = state,
+            ),
+        )
+    }
+
+    @Test
+    fun `matches project name from uproject path without discovered targets`() {
+        val state = UnrealHelperSettingsState().also {
+            it.uprojectPath = "/Project/Lyra/Lyra.uproject"
+        }
+
+        assertTrue(
+            UnrealRunConfigurationMatcher.isLikelyUnrealRunConfiguration(
+                data = matchData(configurationName = "Lyra", executablePath = null, workingDirectory = null),
+                state = state,
+            ),
+        )
+    }
+
+    @Test
+    fun `configuration compatibility requires unreal project context`() {
+        val state = unrealState()
+        state.uprojectPath = ""
+        state.discoveredTargets = mutableListOf()
+
+        assertFalse(UnrealRunConfigurationMatcher.hasUnrealProjectContext(state))
+        assertFalse(
+            UnrealRunConfigurationMatcher.isLikelyUnrealRunConfiguration(
+                data = matchData(configurationName = "MyGame"),
+                state = state,
+            ),
+        )
+    }
+
+    @Test
     fun `matches configuration that references uproject path`() {
         assertTrue(
             UnrealRunConfigurationMatcher.isLikelyUnrealRunConfiguration(

@@ -16,13 +16,16 @@ object UnrealRunConfigurationMatcher {
     fun hasInjectionSettings(state: UnrealHelperSettingsState): Boolean =
         state.applyToRunDebug &&
             state.activeCommandLine.isNotBlank() &&
-            (state.uprojectPath.isNotBlank() || state.discoveredTargets.isNotEmpty())
+            hasUnrealProjectContext(state)
+
+    fun hasUnrealProjectContext(state: UnrealHelperSettingsState): Boolean =
+        state.uprojectPath.isNotBlank() || state.discoveredTargets.isNotEmpty()
 
     fun isLikelyUnrealRunConfiguration(
         data: RunConfigurationMatchData,
         state: UnrealHelperSettingsState,
     ): Boolean {
-        if (!hasInjectionSettings(state)) return false
+        if (!hasUnrealProjectContext(state)) return false
 
         val allText = listOfNotNull(
             data.configurationName,

@@ -1,14 +1,22 @@
 package com.cmroche.unrealhelper.ui
 
+import com.cmroche.unrealhelper.run.RunConfigurationMatchData
+import com.cmroche.unrealhelper.run.UnrealRunConfigurationMatcher
+import com.cmroche.unrealhelper.discovery.UnrealProjectDiscovery
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
+import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
+import com.cmroche.unrealhelper.settings.UnrealTargetState
 import com.intellij.icons.AllIcons
 import com.intellij.ide.DataManager
+import com.intellij.execution.RunManager
+import com.intellij.execution.RunnerAndConfigurationSettings
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.Presentation
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.components.service
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
@@ -17,9 +25,11 @@ import com.intellij.ui.components.fields.ExtendableTextComponent
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
+import java.nio.file.Paths
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
 import javax.swing.JTextField
+import javax.swing.SwingUtilities
 import javax.swing.plaf.basic.BasicComboBoxEditor
 import javax.swing.event.PopupMenuEvent
 import javax.swing.event.PopupMenuListener
@@ -31,7 +41,9 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
     }
 
     override fun update(event: AnActionEvent) {
-        event.presentation.isEnabledAndVisible = event.project != null
+        val project = event.project
+        event.presentation.isVisible = project != null
+        event.presentation.isEnabled = project != null && isCompatibleWithSelectedRunConfiguration(project)
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
@@ -41,6 +53,10 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
         var refreshing = false
 
         fun project(): Project? = projectFor(comboBox)
+        fun updateEnabledState(enabled: Boolean) {
+            comboBox.isEnabled = enabled
+            comboBox.editor.editorComponent?.isEnabled = enabled
+        }
 
         comboBox.isEditable = true
         comboBox.isOpaque = false
@@ -67,6 +83,14 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
         comboBox.prototypeDisplayValue = "-game -windowed -resx=1080 -resy=1920 -log -newconsole"
         comboBox.preferredSize = Dimension(CommandLineInputWidth, comboBox.preferredSize.height)
         comboBox.toolTipText = "UnrealHelper global launch arguments"
+        updateEnabledState(presentation.isEnabled)
+        presentation.addPropertyChangeListener { event ->
+            if (event.propertyName == Presentation.PROP_ENABLED) {
+                SwingUtilities.invokeLater {
+                    updateEnabledState(event.newValue == true)
+                }
+            }
+        }
 
         fun refresh() {
             val currentProject = project() ?: return
@@ -114,9 +138,62 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
         return CommonDataKeys.PROJECT.getData(dataContext)
     }
 
+    private fun isCompatibleWithSelectedRunConfiguration(project: Project): Boolean {
+        val state = compatibilityState(project) ?: return false
+
+        val selectedSettings = RunManager.getInstance(project).selectedConfiguration ?: return true
+        return UnrealRunConfigurationMatcher.isLikelyUnrealRunConfiguration(
+            selectedSettings.toMatchData(),
+            state,
+        )
+    }
+
+    private fun RunnerAndConfigurationSettings.toMatchData(): RunConfigurationMatchData =
+        RunConfigurationMatchData(
+            configurationName = name,
+            configurationTypeId = type.id,
+            factoryId = factory.id,
+            executablePath = null,
+            workingDirectory = null,
+            arguments = emptyList(),
+        )
+
     private companion object {
         private const val CommandLineInputWidth = 330
+        private val CompatibilityStateKey = Key.create<UnrealHelperSettingsState>("UnrealHelper.compatibilityState")
 
         fun toolbarBackground() = JBColor.namedColor("MainToolbar.background", UIUtil.getPanelBackground())
+
+        fun compatibilityState(project: Project): UnrealHelperSettingsState? {
+            val state = project.service<UnrealHelperSettings>().state
+            if (UnrealRunConfigurationMatcher.hasUnrealProjectContext(state)) {
+                return state
+            }
+
+            val cachedState = project.getUserData(CompatibilityStateKey)
+            if (cachedState != null) {
+                return cachedState.takeIf(UnrealRunConfigurationMatcher::hasUnrealProjectContext)
+            }
+
+            val discoveredState = discoverCompatibilityState(project)
+            project.putUserData(CompatibilityStateKey, discoveredState)
+            return discoveredState.takeIf(UnrealRunConfigurationMatcher::hasUnrealProjectContext)
+        }
+
+        private fun discoverCompatibilityState(project: Project): UnrealHelperSettingsState {
+            val basePath = project.basePath ?: return UnrealHelperSettingsState()
+            val result = UnrealProjectDiscovery.discover(Paths.get(basePath))
+            return UnrealHelperSettingsState().also { state ->
+                state.workspaceRoot = result.workspaceRoot.orEmpty()
+                state.uprojectPath = result.uprojectPath.orEmpty()
+                state.discoveredTargets = result.targets.map { target ->
+                    UnrealTargetState().also {
+                        it.name = target.name
+                        it.type = target.type.name
+                        it.path = target.path
+                    }
+                }.toMutableList()
+            }
+        }
     }
 }
