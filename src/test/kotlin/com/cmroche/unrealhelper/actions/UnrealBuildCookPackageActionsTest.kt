@@ -1,5 +1,6 @@
 package com.cmroche.unrealhelper.actions
 
+import com.cmroche.unrealhelper.command.UnrealCommandBuilder
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import org.junit.Assert.assertEquals
@@ -40,13 +41,7 @@ class UnrealBuildCookPackageActionsTest {
 
     @Test
     fun `command contexts include every selected target and platform pair`() {
-        val settings = UnrealHelperSettings()
-        settings.state.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
-        settings.state.workspaceRoot = "/Workspace/MyGame"
-        settings.state.engineRoot = "/Engines/UE_5.6"
-        settings.state.packageDirectory = "/Artifacts/MyGame"
-        settings.state.buildConfiguration = "Shipping"
-        settings.state.activeCommandLine = "-log"
+        val settings = settings()
         settings.state.selectedTargetTypes = mutableListOf("Game")
         settings.state.selectedPlatforms = mutableListOf("Win64", "Linux")
         settings.state.discoveredTargets = mutableListOf(target("MyGameEditor", "Game"))
@@ -67,6 +62,102 @@ class UnrealBuildCookPackageActionsTest {
         assertEquals("Shipping", contexts[0].buildConfiguration)
         assertEquals("-log", contexts[0].extraArguments)
     }
+
+    @Test
+    fun `build commands are emitted for every selected target type on one platform`() {
+        val settings = settings()
+        settings.state.selectedTargetTypes = mutableListOf("Game", "Client")
+        settings.state.selectedPlatforms = mutableListOf("Win64")
+        settings.state.discoveredTargets = mutableListOf(
+            target("MyGameEditor", "Game"),
+            target("MyGameClient", "Client"),
+        )
+
+        val commands = createUnrealCommands(
+            settings = settings,
+            commandFactory = { UnrealCommandBuilder.build(it) },
+            deduplicate = false,
+        )
+
+        assertEquals(2, commands.size)
+        assertEquals("Unreal Build MyGameEditor Game Win64", commands[0].title)
+        assertEquals("Unreal Build MyGameClient Client Win64", commands[1].title)
+    }
+
+    @Test
+    fun `cook commands are deduplicated when selected target types generate identical command lines`() {
+        val settings = settings()
+        settings.state.selectedTargetTypes = mutableListOf("Game", "Client")
+        settings.state.selectedPlatforms = mutableListOf("Win64")
+        settings.state.discoveredTargets = mutableListOf(
+            target("MyGameEditor", "Game"),
+            target("MyGameClient", "Client"),
+        )
+
+        val commands = createUnrealCommands(
+            settings = settings,
+            commandFactory = { UnrealCommandBuilder.cook(it) },
+            deduplicate = true,
+        )
+
+        assertEquals(1, commands.size)
+        assertEquals("Unreal Cook MyGameEditor Game Win64", commands.single().title)
+    }
+
+    @Test
+    fun `package commands are deduplicated when selected target types generate identical command lines`() {
+        val settings = settings()
+        settings.state.selectedTargetTypes = mutableListOf("Game", "Client")
+        settings.state.selectedPlatforms = mutableListOf("Win64")
+        settings.state.discoveredTargets = mutableListOf(
+            target("MyGameEditor", "Game"),
+            target("MyGameClient", "Client"),
+        )
+
+        val commands = createUnrealCommands(
+            settings = settings,
+            commandFactory = { UnrealCommandBuilder.packageProject(it) },
+            deduplicate = true,
+        )
+
+        assertEquals(1, commands.size)
+        assertEquals("Unreal Package MyGameEditor Game Win64", commands.single().title)
+    }
+
+    @Test
+    fun `basename-only uproject path uses project base path as workspace fallback`() {
+        val settings = settings()
+        settings.state.uprojectPath = "MyGame.uproject"
+        settings.state.workspaceRoot = ""
+
+        val contexts = createUnrealCommandContexts(settings, projectBasePath = "/Workspace/MyGame")
+
+        assertEquals("/Workspace/MyGame", contexts.single().workspaceRoot.toString())
+    }
+
+    @Test
+    fun `basename-only uproject path without project base path reports missing workspace root`() {
+        val settings = settings()
+        settings.state.uprojectPath = "MyGame.uproject"
+        settings.state.workspaceRoot = ""
+
+        assertEquals(
+            "Workspace root is not configured",
+            buildCookPackageValidationError(settings.state, projectBasePath = null),
+        )
+    }
+
+    private fun settings(): UnrealHelperSettings =
+        UnrealHelperSettings().also {
+            it.state.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
+            it.state.workspaceRoot = "/Workspace/MyGame"
+            it.state.engineRoot = "/Engines/UE_5.6"
+            it.state.packageDirectory = "/Artifacts/MyGame"
+            it.state.buildConfiguration = "Shipping"
+            it.state.activeCommandLine = "-log"
+            it.state.selectedTargetTypes = mutableListOf("Game")
+            it.state.selectedPlatforms = mutableListOf("Win64")
+        }
 
     private fun target(name: String, type: String): UnrealTargetState =
         UnrealTargetState().also {

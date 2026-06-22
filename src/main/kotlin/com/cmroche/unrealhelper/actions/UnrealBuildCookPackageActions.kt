@@ -17,14 +17,24 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import java.nio.file.Path
 
-internal class UnrealBuildAction : UnrealBuildCookPackageAction({ UnrealCommandBuilder.build(it) })
+internal class UnrealBuildAction : UnrealBuildCookPackageAction(
+    commandFactory = { UnrealCommandBuilder.build(it) },
+    deduplicateCommands = false,
+)
 
-internal class UnrealCookAction : UnrealBuildCookPackageAction({ UnrealCommandBuilder.cook(it) })
+internal class UnrealCookAction : UnrealBuildCookPackageAction(
+    commandFactory = { UnrealCommandBuilder.cook(it) },
+    deduplicateCommands = true,
+)
 
-internal class UnrealPackageAction : UnrealBuildCookPackageAction({ UnrealCommandBuilder.packageProject(it) })
+internal class UnrealPackageAction : UnrealBuildCookPackageAction(
+    commandFactory = { UnrealCommandBuilder.packageProject(it) },
+    deduplicateCommands = true,
+)
 
 internal abstract class UnrealBuildCookPackageAction(
     private val commandFactory: (UnrealCommandContext) -> UnrealCommand,
+    private val deduplicateCommands: Boolean,
 ) : AnAction(), DumbAware {
     final override fun update(event: AnActionEvent) {
         val project = event.project
@@ -44,15 +54,14 @@ internal abstract class UnrealBuildCookPackageAction(
         val settings = project.service<UnrealHelperSettings>()
         val state = settings.state
 
-        val error = buildCookPackageValidationError(state)
+        val error = buildCookPackageValidationError(state, project.basePath)
         if (error != null) {
             notifyError(project, error)
             return
         }
 
         val runner = UnrealTerminalRunner(project)
-        createUnrealCommandContexts(settings)
-            .map(commandFactory)
+        createUnrealCommands(settings, commandFactory, deduplicateCommands, project.basePath)
             .forEach(runner::run)
     }
 
@@ -71,9 +80,27 @@ internal data class UnrealResolvedCommandTarget(
     val type: String,
 )
 
-internal fun createUnrealCommandContexts(settings: UnrealHelperSettings): List<UnrealCommandContext> {
+internal fun createUnrealCommands(
+    settings: UnrealHelperSettings,
+    commandFactory: (UnrealCommandContext) -> UnrealCommand,
+    deduplicate: Boolean,
+    projectBasePath: String? = null,
+): List<UnrealCommand> {
+    val commands = createUnrealCommandContexts(settings, projectBasePath).map(commandFactory)
+    return if (deduplicate) uniqueCommands(commands) else commands
+}
+
+internal fun uniqueCommands(commands: List<UnrealCommand>): List<UnrealCommand> =
+    commands.distinctBy { UnrealCommandIdentity(it.asList(), it.workingDirectory) }
+
+internal fun createUnrealCommandContexts(
+    settings: UnrealHelperSettings,
+    projectBasePath: String? = null,
+): List<UnrealCommandContext> {
     val state = settings.state
     val uprojectPath = Path.of(state.uprojectPath)
+    val workspaceRoot = workspaceRootPath(state, uprojectPath, projectBasePath)
+        ?: throw IllegalStateException("Workspace root is not configured")
     val targets = resolveUnrealCommandTargets(
         uprojectPath = state.uprojectPath,
         selectedTargetTypes = state.selectedTargetTypes,
@@ -86,7 +113,7 @@ internal fun createUnrealCommandContexts(settings: UnrealHelperSettings): List<U
             UnrealCommandContext(
                 uprojectPath = uprojectPath,
                 engineRoot = Path.of(state.engineRoot),
-                workspaceRoot = workspaceRootPath(state, uprojectPath),
+                workspaceRoot = workspaceRoot,
                 packageDirectory = Path.of(settings.effectivePackageDirectory()),
                 buildConfiguration = settings.effectiveBuildConfiguration(),
                 targetName = target.name,
@@ -116,9 +143,16 @@ internal fun resolveUnrealCommandTargets(
 }
 
 private fun canRunBuildCookPackageAction(state: UnrealHelperSettingsState): Boolean =
-    buildCookPackageValidationError(state) == null
+    baseBuildCookPackageValidationError(state) == null
 
-private fun buildCookPackageValidationError(state: UnrealHelperSettingsState): String? =
+internal fun buildCookPackageValidationError(
+    state: UnrealHelperSettingsState,
+    projectBasePath: String?,
+): String? =
+    baseBuildCookPackageValidationError(state)
+        ?: workspaceValidationError(state, projectBasePath)
+
+private fun baseBuildCookPackageValidationError(state: UnrealHelperSettingsState): String? =
     when {
         state.uprojectPath.isBlank() -> ".uproject path is not configured"
         state.engineRoot.isBlank() -> "Engine root is not configured"
@@ -127,11 +161,27 @@ private fun buildCookPackageValidationError(state: UnrealHelperSettingsState): S
         else -> null
     }
 
-private fun workspaceRootPath(state: UnrealHelperSettingsState, uprojectPath: Path): Path =
+private fun workspaceValidationError(
+    state: UnrealHelperSettingsState,
+    projectBasePath: String?,
+): String? {
+    val uprojectPath = Path.of(state.uprojectPath)
+    return if (workspaceRootPath(state, uprojectPath, projectBasePath) == null) {
+        "Workspace root is not configured"
+    } else {
+        null
+    }
+}
+
+private fun workspaceRootPath(
+    state: UnrealHelperSettingsState,
+    uprojectPath: Path,
+    projectBasePath: String?,
+): Path? =
     if (state.workspaceRoot.isNotBlank()) {
         Path.of(state.workspaceRoot)
     } else {
-        uprojectPath.parent ?: Path.of(".")
+        uprojectPath.parent ?: projectBasePath?.takeIf { it.isNotBlank() }?.let(Path::of)
     }
 
 private fun fallbackTargetName(uprojectPath: String): String {
@@ -149,3 +199,8 @@ private fun normalizedCommandValues(values: List<String>): List<String> =
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .distinct()
+
+private data class UnrealCommandIdentity(
+    val commandLine: List<String>,
+    val workingDirectory: String,
+)
