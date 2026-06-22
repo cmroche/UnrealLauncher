@@ -154,10 +154,11 @@ internal fun createQuickLaunchOptions(
     val uprojectPath = Path.of(state.uprojectPath)
     return selectedQuickLaunchKeys(state).map { key ->
         val profile = quickLaunchProfileForOption(state, key)
+        val executable = resolveExecutable(profile, packageDirectory, uprojectPath)
         UnrealQuickLaunchOption(
             key = key,
-            text = "Launch ${key.label()}",
-            executable = resolveExecutable(profile, packageDirectory, uprojectPath),
+            text = launchOptionText(key, executable),
+            executable = executable,
         )
     }
 }
@@ -205,7 +206,7 @@ internal fun executeQuickLaunchOption(
         )
 
         if (command == null) {
-            notifyError("Could not resolve cooked executable for ${option.key.label()}")
+            notifyError("Could not resolve cooked executable for ${option.key.label()} under $packageDirectory.")
             return
         }
 
@@ -246,7 +247,8 @@ internal fun quickLaunchValidationError(
 ): String? =
     when {
         state.uprojectPath.isBlank() -> ".uproject path is not configured"
-        packageDirectory.isBlank() -> "Package directory is not configured"
+        packageDirectory.isBlank() ->
+            "Package directory is not configured; set it in Tools > UnrealHelper before launching cooked builds."
         normalizedQuickLaunchValues(state.selectedTargetTypes).isEmpty() -> "No target types are selected"
         normalizedQuickLaunchValues(state.selectedPlatforms).isEmpty() -> "No platforms are selected"
         else -> null
@@ -272,6 +274,13 @@ private fun normalizedQuickLaunchValues(values: List<String>): List<String> =
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .distinct()
+
+private fun launchOptionText(key: QuickLaunchKey, executable: Path?): String =
+    if (executable == null) {
+        "Launch ${key.label()} (cooked executable not found)"
+    } else {
+        "Launch ${key.label()}"
+    }
 
 private fun QuickLaunchKey.label(): String =
     "$targetType $platform"

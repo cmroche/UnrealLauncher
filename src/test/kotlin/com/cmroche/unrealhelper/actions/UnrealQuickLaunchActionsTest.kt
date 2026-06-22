@@ -68,7 +68,18 @@ class UnrealQuickLaunchActionsTest {
         assertEquals(listOf(QuickLaunchKey("Game", "Win64")), options.map { it.key })
         assertFalse(options.single().isEnabled)
         assertNull(options.single().executable)
+        assertEquals("Launch Game Win64 (cooked executable not found)", options.single().text)
         assertTrue(state.quickLaunchProfiles.isEmpty())
+    }
+
+    @Test
+    fun `missing package directory reports settings-specific validation message`() {
+        val state = settingsState()
+
+        assertEquals(
+            "Package directory is not configured; set it in Tools > UnrealHelper before launching cooked builds.",
+            quickLaunchValidationError(state, packageDirectory = ""),
+        )
     }
 
     @Test
@@ -141,6 +152,31 @@ class UnrealQuickLaunchActionsTest {
         )
 
         assertEquals(listOf("Failed to launch Game Win64: bad executable path"), notifications)
+    }
+
+    @Test
+    fun `launch execution notifies when cooked executable cannot be resolved`() {
+        val state = settingsState()
+        val option = UnrealQuickLaunchOption(
+            key = QuickLaunchKey("Game", "Win64"),
+            text = "Launch Game Win64",
+            executable = packageDirectory().resolve("Windows/MyGame.exe"),
+        )
+        val notifications = mutableListOf<String>()
+
+        executeQuickLaunchOption(
+            option = option,
+            state = state,
+            packageDirectory = packageDirectory().toString(),
+            launch = { _, _ -> error("launch should not run") },
+            notifyError = { notifications += it },
+            resolveExecutable = { _, _, _ -> null },
+        )
+
+        assertEquals(
+            listOf("Could not resolve cooked executable for Game Win64 under ${packageDirectory()}."),
+            notifications,
+        )
     }
 
     @Test

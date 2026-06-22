@@ -147,6 +147,17 @@ class UnrealBuildCookPackageActionsTest {
         )
     }
 
+    @Test
+    fun `missing engine root reports settings-specific validation message`() {
+        val settings = settings()
+        settings.state.engineRoot = ""
+
+        assertEquals(
+            "Engine root is not configured; set it in Tools > UnrealHelper before running Build, Cook, or Package.",
+            buildCookPackageValidationError(settings.state, projectBasePath = "/Workspace/MyGame"),
+        )
+    }
+
     private fun settings(): UnrealHelperSettings =
         UnrealHelperSettings().also {
             it.state.uprojectPath = "/Workspace/MyGame/MyGame.uproject"

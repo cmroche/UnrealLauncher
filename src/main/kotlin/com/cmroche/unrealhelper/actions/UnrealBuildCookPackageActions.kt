@@ -155,7 +155,8 @@ internal fun buildCookPackageValidationError(
 private fun baseBuildCookPackageValidationError(state: UnrealHelperSettingsState): String? =
     when {
         state.uprojectPath.isBlank() -> ".uproject path is not configured"
-        state.engineRoot.isBlank() -> "Engine root is not configured"
+        state.engineRoot.isBlank() ->
+            "Engine root is not configured; set it in Tools > UnrealHelper before running Build, Cook, or Package."
         normalizedCommandValues(state.selectedTargetTypes).isEmpty() -> "No target types are selected"
         normalizedCommandValues(state.selectedPlatforms).isEmpty() -> "No platforms are selected"
         else -> null
