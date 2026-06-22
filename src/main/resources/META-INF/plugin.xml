@@ -61,6 +61,16 @@
           class="com.cmroche.unrealhelper.actions.UnrealPackageAction"
           text="Package"
           description="Package selected Unreal targets"/>
+      <action
+          id="UnrealHelper.LaunchAction"
+          class="com.cmroche.unrealhelper.actions.UnrealLaunchAction"
+          text="Launch"
+          description="Launch selected cooked Unreal targets"/>
+      <action
+          id="UnrealHelper.StopLaunchAction"
+          class="com.cmroche.unrealhelper.actions.UnrealStopLaunchAction"
+          text="Stop"
+          description="Stop UnrealHelper quick launches"/>
     </group>
   </actions>
 </idea-plugin>
