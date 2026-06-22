@@ -18,6 +18,7 @@ class TargetTypesToolbarAction : SelectionToolbarAction(
     emptyText = "Targets",
     labelPrefix = "Targets",
     fallbackValues = listOf("Game", "Client", "Server"),
+    defaultDescription = "Select Unreal target types",
 ) {
     override fun discoveredValues(state: UnrealHelperSettingsState): List<String> =
         state.discoveredTargets.map { it.type }
@@ -34,6 +35,7 @@ class PlatformsToolbarAction : SelectionToolbarAction(
     emptyText = "Platforms",
     labelPrefix = "Platforms",
     fallbackValues = listOf("Win64", "Mac", "Linux"),
+    defaultDescription = "Select Unreal target platforms",
 ) {
     override fun discoveredValues(state: UnrealHelperSettingsState): List<String> =
         state.discoveredPlatforms
@@ -50,9 +52,11 @@ abstract class SelectionToolbarAction(
     private val emptyText: String,
     private val labelPrefix: String,
     private val fallbackValues: List<String>,
+    private val defaultDescription: String,
 ) : ComboBoxAction(), DumbAware {
     init {
         templatePresentation.text = emptyText
+        templatePresentation.description = defaultDescription
     }
 
     final override fun update(event: AnActionEvent) {
@@ -62,17 +66,19 @@ abstract class SelectionToolbarAction(
         if (project == null) {
             event.presentation.isEnabled = false
             event.presentation.text = emptyText
+            event.presentation.description = defaultDescription
             return
         }
 
         val state = project.service<UnrealHelperSettings>().state
-        val selected = normalized(selectedValues(state))
+        val toolbarPresentation = selectionToolbarPresentation(
+            emptyText = emptyText,
+            labelPrefix = labelPrefix,
+            selectedValues = selectedValues(state),
+        )
         event.presentation.isEnabled = state.uprojectPath.isNotBlank()
-        event.presentation.text = if (selected.isEmpty()) {
-            emptyText
-        } else {
-            "$labelPrefix: ${selected.joinToString(", ")}"
-        }
+        event.presentation.text = toolbarPresentation.text
+        event.presentation.description = toolbarPresentation.description ?: defaultDescription
     }
 
     final override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
@@ -98,10 +104,7 @@ abstract class SelectionToolbarAction(
         normalized(discoveredValues(state) + selectedValues(state) + fallbackValues)
 
     private fun normalized(values: List<String>): List<String> =
-        values
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
+        normalizedSelectionValues(values)
 
     private inner class SelectionToggleAction(
         private val project: Project,
@@ -127,3 +130,35 @@ abstract class SelectionToolbarAction(
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
     }
 }
+
+internal data class SelectionToolbarPresentation(
+    val text: String,
+    val description: String?,
+)
+
+internal fun selectionToolbarPresentation(
+    emptyText: String,
+    labelPrefix: String,
+    selectedValues: List<String>,
+): SelectionToolbarPresentation {
+    val selected = normalizedSelectionValues(selectedValues)
+    if (selected.isEmpty()) {
+        return SelectionToolbarPresentation(emptyText, null)
+    }
+
+    val text = if (selected.size == 1) {
+        "$labelPrefix: ${selected.single()}"
+    } else {
+        "$labelPrefix: ${selected.first()} +${selected.size - 1}"
+    }
+    return SelectionToolbarPresentation(
+        text = text,
+        description = "$labelPrefix: ${selected.joinToString(", ")}",
+    )
+}
+
+private fun normalizedSelectionValues(values: List<String>): List<String> =
+    values
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
