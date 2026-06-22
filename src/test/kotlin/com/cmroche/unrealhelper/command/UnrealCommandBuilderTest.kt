@@ -110,6 +110,34 @@ class UnrealCommandBuilderTest {
     }
 
     @Test
+    fun `shell line quotes project paths with spaces`() {
+        val command = UnrealCommandBuilder.build(
+            context(
+                uprojectPath = Path.of("/Workspace/My Game/My Game.uproject"),
+                engineRoot = Path.of("/Engines/Epic Games/UE_5.6"),
+            ),
+        )
+
+        assertEquals(
+            "'/Engines/Epic Games/UE_5.6/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool' " +
+                "MyGame Win64 Development '-Project=/Workspace/My Game/My Game.uproject' -WaitMutex",
+            command.shellLine(),
+        )
+    }
+
+    @Test
+    fun `shell line escapes quotes in global args`() {
+        val command = UnrealCommandBuilder.build(context(extraArguments = "-ExecCmds=\"stat 'fps'\""))
+
+        assertEquals(
+            "/Engines/UE_5.6/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool " +
+                "MyGame Win64 Development -Project=/Workspace/MyGame/MyGame.uproject -WaitMutex " +
+                "'-ExecCmds=stat '\\''fps'\\'''",
+            command.shellLine(),
+        )
+    }
+
+    @Test
     fun `windows executable resolution uses exe and bat files`() {
         val build = UnrealCommandBuilder.build(context(), osName = "Windows 11")
         val cook = UnrealCommandBuilder.cook(context(), osName = "Windows 11")
