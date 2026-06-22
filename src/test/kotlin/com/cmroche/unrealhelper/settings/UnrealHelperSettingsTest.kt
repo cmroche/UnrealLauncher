@@ -13,12 +13,27 @@ class UnrealHelperSettingsTest {
     fun `defaults enable run debug injection`() {
         val settings = UnrealHelperSettings()
 
+        assertEquals("", settings.state.engineRoot)
+        assertEquals("Development", settings.state.buildConfiguration)
+        assertEquals("", settings.state.packageDirectory)
+        assertEquals("Packages", settings.effectivePackageDirectory())
         assertEquals("", settings.state.activeCommandLine)
         assertTrue(settings.state.applyToRunDebug)
         assertTrue(settings.state.savedCommandLines.isEmpty())
         assertTrue(settings.state.recentCommandLines.isEmpty())
         assertEquals(listOf("Game", "Client", "Server"), settings.state.selectedTargetTypes)
         assertTrue(settings.state.selectedPlatforms.isEmpty())
+    }
+
+    @Test
+    fun `configured project requires uproject path`() {
+        val settings = UnrealHelperSettings()
+
+        assertTrue(!settings.hasConfiguredProject())
+
+        settings.state.uprojectPath = "/Project/MyGame/MyGame.uproject"
+
+        assertTrue(settings.hasConfiguredProject())
     }
 
     @Test
@@ -47,6 +62,43 @@ class UnrealHelperSettingsTest {
 
         assertEquals(listOf("Game", "Server"), settings.state.selectedTargetTypes)
         assertEquals(listOf("Win64", "Linux"), settings.state.selectedPlatforms)
+    }
+
+    @Test
+    fun `command execution settings survive state serialization`() {
+        val savedState = UnrealHelperSettingsState().also {
+            it.engineRoot = "/Epic/UE_5.6"
+            it.buildConfiguration = "Shipping"
+            it.packageDirectory = "/Project/MyGame/Artifacts"
+        }
+        val loadedState = XmlSerializer.deserialize(
+            XmlSerializer.serialize(savedState),
+            UnrealHelperSettingsState::class.java,
+        )
+        val settings = UnrealHelperSettings()
+
+        settings.loadState(loadedState)
+
+        assertEquals("/Epic/UE_5.6", settings.state.engineRoot)
+        assertEquals("Shipping", settings.state.buildConfiguration)
+        assertEquals("/Project/MyGame/Artifacts", settings.state.packageDirectory)
+        assertEquals("/Project/MyGame/Artifacts", settings.effectivePackageDirectory())
+    }
+
+    @Test
+    fun `effective build configuration falls back to development`() {
+        val settings = UnrealHelperSettings()
+
+        assertEquals("Development", settings.effectiveBuildConfiguration())
+
+        settings.state.buildConfiguration = ""
+        assertEquals("Development", settings.effectiveBuildConfiguration())
+
+        settings.state.buildConfiguration = "Unknown"
+        assertEquals("Development", settings.effectiveBuildConfiguration())
+
+        settings.state.buildConfiguration = "DebugGame"
+        assertEquals("DebugGame", settings.effectiveBuildConfiguration())
     }
 
     @Test

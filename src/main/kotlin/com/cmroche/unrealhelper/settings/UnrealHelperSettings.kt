@@ -14,6 +14,8 @@ class UnrealHelperSettingsState {
     var uprojectPath: String = ""
     var workspaceRoot: String = ""
     var packageDirectory: String = ""
+    var engineRoot: String = ""
+    var buildConfiguration: String = "Development"
     var selectedTargetTypes: MutableList<String> = mutableListOf(
         UnrealTargetType.Game.name,
         UnrealTargetType.Client.name,
@@ -93,7 +95,15 @@ class UnrealHelperSettings : PersistentStateComponent<UnrealHelperSettingsState>
         defaultPackageDirectory(state.workspaceRoot)
     }
 
+    fun effectiveBuildConfiguration(): String =
+        state.buildConfiguration.takeIf { it in BuildConfigurations } ?: DefaultBuildConfiguration
+
+    fun hasConfiguredProject(): Boolean = state.uprojectPath.isNotBlank()
+
     companion object {
+        const val DefaultBuildConfiguration = "Development"
+        val BuildConfigurations: List<String> = listOf("Debug", "DebugGame", "Development", "Test", "Shipping")
+
         private const val MaxSavedCommandLines = 20
         private const val MaxRecentCommandLines = 10
 

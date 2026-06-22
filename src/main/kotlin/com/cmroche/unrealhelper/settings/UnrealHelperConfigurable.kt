@@ -6,6 +6,7 @@ import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import com.intellij.openapi.components.service
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
@@ -27,6 +28,8 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
     private var uprojectPathField: JBTextField? = null
     private var workspaceRootField: JBTextField? = null
     private var packageDirectoryField: JBTextField? = null
+    private var engineRootField: JBTextField? = null
+    private var buildConfigurationComboBox: ComboBox<String>? = null
     private var platformsField: JBTextField? = null
     private var targetTypeCheckboxes: Map<UnrealTargetType, JCheckBox> = emptyMap()
     private var discoverySummaryArea: JBTextArea? = null
@@ -44,6 +47,8 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         uprojectPathField = JBTextField()
         workspaceRootField = JBTextField()
         packageDirectoryField = JBTextField()
+        engineRootField = JBTextField()
+        buildConfigurationComboBox = ComboBox<String>(UnrealHelperSettings.BuildConfigurations.toTypedArray())
         platformsField = JBTextField()
         discoverySummaryArea = JBTextArea(6, 72).also {
             it.isEditable = false
@@ -66,10 +71,13 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
     }
 
     override fun isModified(): Boolean {
-        val state = project.service<UnrealHelperSettings>().state
+        val settings = project.service<UnrealHelperSettings>()
+        val state = settings.state
         return uprojectPathField?.text != state.uprojectPath ||
             workspaceRootField?.text != state.workspaceRoot ||
-            packageDirectoryField?.text != project.service<UnrealHelperSettings>().effectivePackageDirectory() ||
+            packageDirectoryField?.text != settings.effectivePackageDirectory() ||
+            engineRootField?.text != state.engineRoot ||
+            selectedBuildConfiguration() != settings.effectiveBuildConfiguration() ||
             selectedTargetTypes() != state.selectedTargetTypes ||
             parseCsv(platformsField?.text.orEmpty()) != state.selectedPlatforms ||
             commandLineArea?.text != CommandLineArguments.toEditorText(state.activeCommandLine) ||
@@ -83,6 +91,8 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         state.uprojectPath = uprojectPathField?.text.orEmpty().trim()
         state.workspaceRoot = workspaceRootField?.text.orEmpty().trim()
         state.packageDirectory = packageDirectoryField?.text.orEmpty().trim()
+        state.engineRoot = engineRootField?.text.orEmpty().trim()
+        state.buildConfiguration = selectedBuildConfiguration()
         state.selectedTargetTypes = selectedTargetTypes().toMutableList()
         state.selectedPlatforms = parseCsv(platformsField?.text.orEmpty()).toMutableList()
         state.applyToRunDebug = applyToRunDebug?.isSelected ?: true
@@ -95,6 +105,8 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         uprojectPathField?.text = state.uprojectPath
         workspaceRootField?.text = state.workspaceRoot
         packageDirectoryField?.text = settings.effectivePackageDirectory()
+        engineRootField?.text = state.engineRoot
+        buildConfigurationComboBox?.selectedItem = settings.effectiveBuildConfiguration()
         platformsField?.text = state.selectedPlatforms.joinToString(", ")
         for ((targetType, checkBox) in targetTypeCheckboxes) {
             checkBox.isSelected = targetType.name in state.selectedTargetTypes
@@ -109,6 +121,8 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         uprojectPathField = null
         workspaceRootField = null
         packageDirectoryField = null
+        engineRootField = null
+        buildConfigurationComboBox = null
         platformsField = null
         targetTypeCheckboxes = emptyMap()
         discoverySummaryArea = null
@@ -121,7 +135,9 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         val form = JPanel(GridBagLayout())
         addFormRow(form, 0, ".uproject:", uprojectPathField)
         addFormRow(form, 1, "Workspace Root:", workspaceRootField)
-        addFormRow(form, 2, "Package Dir:", packageDirectoryField)
+        addFormRow(form, 2, "Engine Root:", engineRootField)
+        addFormRow(form, 3, "Package Dir:", packageDirectoryField)
+        addFormRow(form, 4, "Build Configuration:", buildConfigurationComboBox)
         panel.add(form, BorderLayout.CENTER)
         return panel
     }
@@ -186,7 +202,7 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             it.border = BorderFactory.createTitledBorder(title)
         }
 
-    private fun addFormRow(form: JPanel, row: Int, label: String, field: JBTextField?) {
+    private fun addFormRow(form: JPanel, row: Int, label: String, field: JComponent?) {
         val labelConstraints = GridBagConstraints().also {
             it.gridx = 0
             it.gridy = row
@@ -210,6 +226,11 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             .filterValues { it.isSelected }
             .keys
             .map { it.name }
+
+    private fun selectedBuildConfiguration(): String =
+        (buildConfigurationComboBox?.selectedItem as? String)
+            ?.takeIf { it in UnrealHelperSettings.BuildConfigurations }
+            ?: UnrealHelperSettings.DefaultBuildConfiguration
 
     private fun discoverySummary(state: UnrealHelperSettingsState): String {
         val lines = mutableListOf<String>()
