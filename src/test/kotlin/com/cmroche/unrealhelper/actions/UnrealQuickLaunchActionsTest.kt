@@ -3,9 +3,11 @@ package com.cmroche.unrealhelper.actions
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
+import com.intellij.openapi.progress.ProcessCanceledException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -99,6 +101,89 @@ class UnrealQuickLaunchActionsTest {
             listOf("-windowed", "-resx=1280", "-log", "-ExecCmds=stat fps"),
             launch?.commandLine?.parametersList?.list,
         )
+    }
+
+    @Test
+    fun `resolved launch command without existing profile does not create persistent profile`() {
+        val state = settingsState()
+        val executable = regularFile("Windows/MyGame.exe")
+        state.quickLaunchProfiles = mutableListOf()
+
+        val launch = createQuickLaunchCommand(
+            state = state,
+            key = QuickLaunchKey("Game", "Win64"),
+            packageDirectory = packageDirectory(),
+            resolveExecutable = { _, _, _ -> executable },
+        )
+
+        assertEquals(QuickLaunchKey("Game", "Win64"), launch?.key)
+        assertEquals(executable.toString(), launch?.commandLine?.exePath)
+        assertTrue(state.quickLaunchProfiles.isEmpty())
+    }
+
+    @Test
+    fun `launch execution notifies when command creation throws`() {
+        val state = settingsState()
+        val option = UnrealQuickLaunchOption(
+            key = QuickLaunchKey("Game", "Win64"),
+            text = "Launch Game Win64",
+            executable = packageDirectory().resolve("Windows/MyGame.exe"),
+        )
+        val notifications = mutableListOf<String>()
+
+        executeQuickLaunchOption(
+            option = option,
+            state = state,
+            packageDirectory = packageDirectory().toString(),
+            launch = { _, _ -> error("launch should not run") },
+            notifyError = { notifications += it },
+            resolveExecutable = { _, _, _ -> throw IllegalArgumentException("bad executable path") },
+        )
+
+        assertEquals(listOf("Failed to launch Game Win64: bad executable path"), notifications)
+    }
+
+    @Test
+    fun `launch execution notifies when package directory path is invalid`() {
+        val state = settingsState()
+        val option = UnrealQuickLaunchOption(
+            key = QuickLaunchKey("Game", "Win64"),
+            text = "Launch Game Win64",
+            executable = packageDirectory().resolve("Windows/MyGame.exe"),
+        )
+        val notifications = mutableListOf<String>()
+
+        executeQuickLaunchOption(
+            option = option,
+            state = state,
+            packageDirectory = "\u0000",
+            launch = { _, _ -> error("launch should not run") },
+            notifyError = { notifications += it },
+        )
+
+        assertEquals(1, notifications.size)
+        assertTrue(notifications.single().startsWith("Failed to launch Game Win64:"))
+    }
+
+    @Test
+    fun `launch execution rethrows process cancellation`() {
+        val state = settingsState()
+        val option = UnrealQuickLaunchOption(
+            key = QuickLaunchKey("Game", "Win64"),
+            text = "Launch Game Win64",
+            executable = packageDirectory().resolve("Windows/MyGame.exe"),
+        )
+
+        assertThrows(ProcessCanceledException::class.java) {
+            executeQuickLaunchOption(
+                option = option,
+                state = state,
+                packageDirectory = packageDirectory().toString(),
+                launch = { _, _ -> error("launch should not run") },
+                notifyError = { error("cancellation should not notify") },
+                resolveExecutable = { _, _, _ -> throw ProcessCanceledException() },
+            )
+        }
     }
 
     @Test

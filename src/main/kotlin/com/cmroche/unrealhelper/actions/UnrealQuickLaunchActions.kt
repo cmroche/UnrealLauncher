@@ -16,6 +16,7 @@ import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.components.service
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
@@ -106,22 +107,15 @@ private class UnrealLaunchOptionAction(
         if (!option.isEnabled) return
 
         val settings = project.service<UnrealHelperSettings>()
-        val command = createQuickLaunchCommand(
+        executeQuickLaunchOption(
+            option = option,
             state = settings.state,
-            key = option.key,
-            packageDirectory = Path.of(settings.effectivePackageDirectory()),
+            packageDirectory = settings.effectivePackageDirectory(),
+            launch = { key, commandLine ->
+                project.service<QuickLaunchProcessService>().launch(key, commandLine)
+            },
+            notifyError = { notifyLaunchError(project, it) },
         )
-
-        if (command == null) {
-            notifyLaunchError(project, "Could not resolve cooked executable for ${option.key.label()}")
-            return
-        }
-
-        try {
-            project.service<QuickLaunchProcessService>().launch(command.key, command.commandLine)
-        } catch (throwable: Throwable) {
-            notifyLaunchError(project, "Failed to launch ${option.key.label()}: ${throwable.message ?: throwable.javaClass.simpleName}")
-        }
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
@@ -180,7 +174,7 @@ internal fun createQuickLaunchCommand(
         return null
     }
 
-    val profile = state.profileFor(key.targetType, key.platform)
+    val profile = quickLaunchProfileForOption(state, key)
     val uprojectPath = Path.of(state.uprojectPath)
     val executable = resolveExecutable(profile, packageDirectory, uprojectPath) ?: return null
 
@@ -188,6 +182,39 @@ internal fun createQuickLaunchCommand(
         key = key,
         commandLine = CookedExecutableResolver.launchCommand(profile, executable, state.activeCommandLine),
     )
+}
+
+internal fun executeQuickLaunchOption(
+    option: UnrealQuickLaunchOption,
+    state: UnrealHelperSettingsState,
+    packageDirectory: String,
+    launch: (QuickLaunchKey, GeneralCommandLine) -> Unit,
+    notifyError: (String) -> Unit,
+    resolveExecutable: (QuickLaunchProfileState, Path, Path) -> Path? = { profile, packages, uproject ->
+        CookedExecutableResolver.resolve(profile, packages, uproject)
+    },
+) {
+    if (!option.isEnabled) return
+
+    try {
+        val command = createQuickLaunchCommand(
+            state = state,
+            key = option.key,
+            packageDirectory = Path.of(packageDirectory),
+            resolveExecutable = resolveExecutable,
+        )
+
+        if (command == null) {
+            notifyError("Could not resolve cooked executable for ${option.key.label()}")
+            return
+        }
+
+        launch(command.key, command.commandLine)
+    } catch (exception: ProcessCanceledException) {
+        throw exception
+    } catch (exception: Exception) {
+        notifyError("Failed to launch ${option.key.label()}: ${exception.message ?: exception.javaClass.simpleName}")
+    }
 }
 
 internal fun selectedQuickLaunchKeys(state: UnrealHelperSettingsState): List<QuickLaunchKey> {
