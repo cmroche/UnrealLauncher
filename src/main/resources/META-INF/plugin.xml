@@ -16,6 +16,7 @@
     <notificationGroup id="UnrealHelper" displayType="BALLOON"/>
     <projectService serviceImplementation="com.cmroche.unrealhelper.settings.UnrealHelperSettings"/>
     <projectService serviceImplementation="com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryService"/>
+    <projectService serviceImplementation="com.cmroche.unrealhelper.launch.QuickLaunchProcessService"/>
     <projectConfigurable
         parentId="tools"
         instance="com.cmroche.unrealhelper.settings.UnrealHelperConfigurable"
