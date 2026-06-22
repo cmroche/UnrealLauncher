@@ -1,23 +1,28 @@
 package com.cmroche.unrealhelper.command
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Path
 
 class UnrealCommandBuilderTest {
     @Test
-    fun `build command includes target platform configuration project path and global args`() {
-        val command = UnrealCommandBuilder.build(context(extraArguments = "-game -log"))
+    fun `build command uses target name for UBT target and includes global args`() {
+        val command = UnrealCommandBuilder.build(
+            context(
+                targetName = "MyGameEditor",
+                targetType = "Game",
+                extraArguments = "-game -log",
+            ),
+        )
 
-        assertEquals("Unreal Build MyGame Win64", command.title)
+        assertEquals("Unreal Build MyGameEditor Game Win64", command.title)
         assertEquals(
             "/Engines/UE_5.6/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool",
             command.executable,
         )
         assertEquals(
             listOf(
-                "MyGame",
+                "MyGameEditor",
                 "Win64",
                 "Development",
                 "-Project=/Workspace/MyGame/MyGame.uproject",
@@ -33,9 +38,9 @@ class UnrealCommandBuilderTest {
 
     @Test
     fun `cook command uses RunUAT BuildCookRun and skipstage`() {
-        val command = UnrealCommandBuilder.cook(context(platform = "Linux"))
+        val command = UnrealCommandBuilder.cook(context(targetName = "MyGameServer", targetType = "Server", platform = "Linux"))
 
-        assertEquals("Unreal Cook MyGame Linux", command.title)
+        assertEquals("Unreal Cook MyGameServer Server Linux", command.title)
         assertEquals("/Engines/UE_5.6/Engine/Build/BatchFiles/RunUAT.sh", command.executable)
         assertEquals(
             listOf(
@@ -57,13 +62,34 @@ class UnrealCommandBuilderTest {
     @Test
     fun `package command includes archive and configured archive directory`() {
         val command = UnrealCommandBuilder.packageProject(
-            context(packageDirectory = Path.of("/Artifacts/MyGame"), buildConfiguration = "Shipping"),
+            context(
+                targetName = "MyGameClient",
+                targetType = "Client",
+                packageDirectory = Path.of("/Artifacts/MyGame"),
+                buildConfiguration = "Shipping",
+            ),
         )
 
-        assertEquals("Unreal Package MyGame Win64", command.title)
-        assertTrue(command.arguments.contains("-archive"))
-        assertTrue(command.arguments.contains("-archivedirectory=/Artifacts/MyGame"))
-        assertTrue(command.arguments.contains("-clientconfig=Shipping"))
+        assertEquals("Unreal Package MyGameClient Client Win64", command.title)
+        assertEquals("/Engines/UE_5.6/Engine/Build/BatchFiles/RunUAT.sh", command.executable)
+        assertEquals(
+            listOf(
+                "BuildCookRun",
+                "-project=/Workspace/MyGame/MyGame.uproject",
+                "-noP4",
+                "-build",
+                "-cook",
+                "-stage",
+                "-pak",
+                "-archive",
+                "-archivedirectory=/Artifacts/MyGame",
+                "-targetplatform=Win64",
+                "-clientconfig=Shipping",
+                "-utf8output",
+            ),
+            command.arguments,
+        )
+        assertEquals("/Workspace/MyGame", command.workingDirectory)
     }
 
     @Test
@@ -76,13 +102,33 @@ class UnrealCommandBuilderTest {
         )
     }
 
+    @Test
+    fun `quoted extra args preserve whitespace inside argument values`() {
+        val command = UnrealCommandBuilder.cook(context(extraArguments = "-ExecCmds=\" stat fps \""))
+
+        assertEquals("-ExecCmds= stat fps ", command.arguments.last())
+    }
+
+    @Test
+    fun `windows executable resolution uses exe and bat files`() {
+        val build = UnrealCommandBuilder.build(context(), osName = "Windows 11")
+        val cook = UnrealCommandBuilder.cook(context(), osName = "Windows 11")
+
+        assertEquals(
+            "/Engines/UE_5.6/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.exe",
+            build.executable,
+        )
+        assertEquals("/Engines/UE_5.6/Engine/Build/BatchFiles/RunUAT.bat", cook.executable)
+    }
+
     private fun context(
         uprojectPath: Path = Path.of("/Workspace/MyGame/MyGame.uproject"),
         engineRoot: Path = Path.of("/Engines/UE_5.6"),
         workspaceRoot: Path = Path.of("/Workspace/MyGame"),
         packageDirectory: Path = Path.of("/Workspace/MyGame/Packages"),
         buildConfiguration: String = "Development",
-        targetType: String = "MyGame",
+        targetName: String = "MyGame",
+        targetType: String = "Game",
         platform: String = "Win64",
         extraArguments: String = "",
     ): UnrealCommandContext =
@@ -92,6 +138,7 @@ class UnrealCommandBuilderTest {
             workspaceRoot = workspaceRoot,
             packageDirectory = packageDirectory,
             buildConfiguration = buildConfiguration,
+            targetName = targetName,
             targetType = targetType,
             platform = platform,
             extraArguments = extraArguments,

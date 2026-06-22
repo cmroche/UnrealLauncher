@@ -4,12 +4,15 @@ import com.intellij.util.execution.ParametersListUtil
 import java.nio.file.Path
 
 object UnrealCommandBuilder {
-    fun build(context: UnrealCommandContext): UnrealCommand =
+    fun build(
+        context: UnrealCommandContext,
+        osName: String = System.getProperty("os.name"),
+    ): UnrealCommand =
         UnrealCommand(
-            title = "Unreal Build ${context.targetType} ${context.platform}",
-            executable = unrealBuildTool(context.engineRoot),
+            title = "Unreal Build ${context.targetName} ${context.targetType} ${context.platform}",
+            executable = unrealBuildTool(context.engineRoot, osName),
             arguments = listOf(
-                context.targetType,
+                context.targetName,
                 context.platform,
                 context.buildConfiguration,
                 "-Project=${context.uprojectPath}",
@@ -18,10 +21,13 @@ object UnrealCommandBuilder {
             workingDirectory = context.workspaceRoot.toString(),
         )
 
-    fun cook(context: UnrealCommandContext): UnrealCommand =
+    fun cook(
+        context: UnrealCommandContext,
+        osName: String = System.getProperty("os.name"),
+    ): UnrealCommand =
         UnrealCommand(
-            title = "Unreal Cook ${context.targetType} ${context.platform}",
-            executable = runUat(context.engineRoot),
+            title = "Unreal Cook ${context.targetName} ${context.targetType} ${context.platform}",
+            executable = runUat(context.engineRoot, osName),
             arguments = listOf(
                 "BuildCookRun",
                 "-project=${context.uprojectPath}",
@@ -36,10 +42,13 @@ object UnrealCommandBuilder {
             workingDirectory = context.workspaceRoot.toString(),
         )
 
-    fun packageProject(context: UnrealCommandContext): UnrealCommand =
+    fun packageProject(
+        context: UnrealCommandContext,
+        osName: String = System.getProperty("os.name"),
+    ): UnrealCommand =
         UnrealCommand(
-            title = "Unreal Package ${context.targetType} ${context.platform}",
-            executable = runUat(context.engineRoot),
+            title = "Unreal Package ${context.targetName} ${context.targetType} ${context.platform}",
+            executable = runUat(context.engineRoot, osName),
             arguments = listOf(
                 "BuildCookRun",
                 "-project=${context.uprojectPath}",
@@ -59,21 +68,23 @@ object UnrealCommandBuilder {
 
     fun parseExtraArguments(extraArguments: String): List<String> =
         ParametersListUtil.parse(extraArguments)
-            .map { it.trim() }
             .filter { it.isNotEmpty() }
 
-    private fun unrealBuildTool(engineRoot: Path): String =
+    private fun unrealBuildTool(engineRoot: Path, osName: String): String =
         engineRoot.resolve("Engine")
             .resolve("Binaries")
             .resolve("DotNET")
             .resolve("UnrealBuildTool")
-            .resolve("UnrealBuildTool")
+            .resolve(if (isWindows(osName)) "UnrealBuildTool.exe" else "UnrealBuildTool")
             .toString()
 
-    private fun runUat(engineRoot: Path): String =
+    private fun runUat(engineRoot: Path, osName: String): String =
         engineRoot.resolve("Engine")
             .resolve("Build")
             .resolve("BatchFiles")
-            .resolve("RunUAT.sh")
+            .resolve(if (isWindows(osName)) "RunUAT.bat" else "RunUAT.sh")
             .toString()
+
+    private fun isWindows(osName: String): Boolean =
+        osName.startsWith("Windows", ignoreCase = true)
 }

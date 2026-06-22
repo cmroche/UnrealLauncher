@@ -8,6 +8,7 @@ data class UnrealCommandContext(
     val workspaceRoot: Path,
     val packageDirectory: Path,
     val buildConfiguration: String,
+    val targetName: String,
     val targetType: String,
     val platform: String,
     val extraArguments: String,
