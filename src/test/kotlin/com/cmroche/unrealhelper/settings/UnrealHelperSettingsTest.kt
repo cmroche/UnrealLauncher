@@ -9,6 +9,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import javax.swing.JTable
+import javax.swing.JTextField
 
 class UnrealHelperSettingsTest {
     @Test
@@ -109,6 +111,55 @@ class UnrealHelperSettingsTest {
         assertEquals("Server", createdProfile.targetType)
         assertEquals("Linux", createdProfile.platform)
         assertEquals(listOf(createdProfile), state.quickLaunchProfiles)
+    }
+
+    @Test
+    fun `quick launch table snapshot includes active executable editor value`() {
+        val model = QuickLaunchProfileTableModel().also {
+            it.setRows(
+                listOf(
+                    QuickLaunchProfileRow(
+                        targetType = "Game",
+                        platform = "Win64",
+                        executablePath = "/Project/Old.exe",
+                    ),
+                ),
+            )
+        }
+        val table = JTable(model)
+
+        assertTrue(table.editCellAt(0, 2))
+        (table.editorComponent as JTextField).text = "/Project/New.exe"
+
+        val modelSnapshot = model.snapshot()
+        val activeEditorSnapshot = quickLaunchRowsWithActiveEditor(modelSnapshot, table)
+
+        assertEquals("/Project/Old.exe", modelSnapshot.single().executablePath)
+        assertEquals("/Project/New.exe", activeEditorSnapshot.single().executablePath)
+    }
+
+    @Test
+    fun `quick launch remembered rows preserve active editor value`() {
+        val model = QuickLaunchProfileTableModel().also {
+            it.setRows(
+                listOf(
+                    QuickLaunchProfileRow(
+                        targetType = "Game",
+                        platform = "Win64",
+                        workingDirectory = "/Project/Old",
+                    ),
+                ),
+            )
+        }
+        val table = JTable(model)
+        val rememberedRows = mutableMapOf<QuickLaunchProfileKey, QuickLaunchProfileRow>()
+
+        assertTrue(table.editCellAt(0, 3))
+        (table.editorComponent as JTextField).text = "/Project/New"
+
+        rememberQuickLaunchRows(quickLaunchRowsWithActiveEditor(model.snapshot(), table), rememberedRows)
+
+        assertEquals("/Project/New", rememberedRows[QuickLaunchProfileKey("Game", "Win64")]?.workingDirectory)
     }
 
     @Test

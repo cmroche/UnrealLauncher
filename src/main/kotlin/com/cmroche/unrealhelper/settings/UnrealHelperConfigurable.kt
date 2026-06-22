@@ -29,6 +29,7 @@ import javax.swing.JTable
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import javax.swing.table.AbstractTableModel
+import javax.swing.text.JTextComponent
 
 class UnrealHelperConfigurable(private val project: Project) : SearchableConfigurable {
     private var rootPanel: JPanel? = null
@@ -319,13 +320,17 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             row != savedRow
         }
 
-    private fun quickLaunchTableRows(): List<QuickLaunchProfileRow> =
-        quickLaunchTableModel?.snapshot().orEmpty()
+    private fun quickLaunchTableRows(includeActiveEditor: Boolean = true): List<QuickLaunchProfileRow> {
+        val rows = quickLaunchTableModel?.snapshot().orEmpty()
+        return if (includeActiveEditor) {
+            quickLaunchRowsWithActiveEditor(rows, quickLaunchTable)
+        } else {
+            rows
+        }
+    }
 
     private fun rememberQuickLaunchTableRows() {
-        quickLaunchTableRows().forEach { row ->
-            quickLaunchEditedRows[QuickLaunchProfileKey(row.targetType, row.platform)] = row
-        }
+        rememberQuickLaunchRows(quickLaunchTableRows(), quickLaunchEditedRows)
     }
 
     private fun stopQuickLaunchCellEditing() {
@@ -359,12 +364,12 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             .distinct()
 }
 
-private data class QuickLaunchProfileKey(
+internal data class QuickLaunchProfileKey(
     val targetType: String,
     val platform: String,
 )
 
-private data class QuickLaunchProfileRow(
+internal data class QuickLaunchProfileRow(
     val targetType: String,
     val platform: String,
     val executablePath: String = "",
@@ -372,7 +377,7 @@ private data class QuickLaunchProfileRow(
     val arguments: String = "",
 )
 
-private class QuickLaunchProfileTableModel : AbstractTableModel() {
+internal class QuickLaunchProfileTableModel : AbstractTableModel() {
     private val columns = listOf("Target Type", "Platform", "Executable", "Working Directory", "Arguments")
     private var rows = mutableListOf<QuickLaunchProfileRow>()
 
@@ -421,6 +426,52 @@ private class QuickLaunchProfileTableModel : AbstractTableModel() {
 
     private companion object {
         private const val EditableColumnStart = 2
+    }
+}
+
+internal fun quickLaunchRowsWithActiveEditor(
+    rows: List<QuickLaunchProfileRow>,
+    table: JTable?,
+): List<QuickLaunchProfileRow> {
+    if (table?.isEditing != true) return rows
+
+    val viewRow = table.editingRow
+    val viewColumn = table.editingColumn
+    if (viewRow < 0 || viewColumn < 0) return rows
+
+    val modelRow = table.convertRowIndexToModel(viewRow)
+    val modelColumn = table.convertColumnIndexToModel(viewColumn)
+    val editorValue = (table.editorComponent as? JTextComponent)?.text
+        ?: table.cellEditor?.cellEditorValue?.toString().orEmpty()
+    return rows.withQuickLaunchEditorValue(modelRow, modelColumn, editorValue)
+}
+
+internal fun rememberQuickLaunchRows(
+    rows: List<QuickLaunchProfileRow>,
+    editedRows: MutableMap<QuickLaunchProfileKey, QuickLaunchProfileRow>,
+) {
+    rows.forEach { row ->
+        editedRows[QuickLaunchProfileKey(row.targetType, row.platform)] = row
+    }
+}
+
+private fun List<QuickLaunchProfileRow>.withQuickLaunchEditorValue(
+    rowIndex: Int,
+    columnIndex: Int,
+    value: String,
+): List<QuickLaunchProfileRow> {
+    if (rowIndex !in indices) return this
+
+    val updatedRow = when (columnIndex) {
+        2 -> this[rowIndex].copy(executablePath = value)
+        3 -> this[rowIndex].copy(workingDirectory = value)
+        4 -> this[rowIndex].copy(arguments = value)
+        else -> this[rowIndex]
+    }
+    if (updatedRow == this[rowIndex]) return this
+
+    return toMutableList().also {
+        it[rowIndex] = updatedRow
     }
 }
 
