@@ -3,6 +3,7 @@ package com.cmroche.unrealhelper.settings
 import com.cmroche.unrealhelper.discovery.DiscoveredUnrealTarget
 import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryResult
 import com.cmroche.unrealhelper.discovery.UnrealTargetType
+import com.intellij.util.xmlb.XmlSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,6 +29,24 @@ class UnrealHelperSettingsTest {
 
         assertEquals("-game -log", settings.state.activeCommandLine)
         assertEquals(listOf("-game -log"), settings.state.recentCommandLines)
+    }
+
+    @Test
+    fun `selected target types and platforms survive state serialization`() {
+        val savedState = UnrealHelperSettingsState().also {
+            it.selectedTargetTypes = mutableListOf("Game", "Server")
+            it.selectedPlatforms = mutableListOf("Win64", "Linux")
+        }
+        val loadedState = XmlSerializer.deserialize(
+            XmlSerializer.serialize(savedState),
+            UnrealHelperSettingsState::class.java,
+        )
+        val settings = UnrealHelperSettings()
+
+        settings.loadState(loadedState)
+
+        assertEquals(listOf("Game", "Server"), settings.state.selectedTargetTypes)
+        assertEquals(listOf("Win64", "Linux"), settings.state.selectedPlatforms)
     }
 
     @Test
