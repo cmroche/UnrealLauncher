@@ -8,12 +8,26 @@ data class UnrealCommand(
 ) {
     fun asList(): List<String> = listOf(executable) + arguments
 
-    fun shellLine(): String = asList().joinToString(" ") { it.quoteForShell() }
+    fun shellLine(osName: String = System.getProperty("os.name")): String =
+        asList().joinToString(" ") {
+            if (osName.startsWith("Windows", ignoreCase = true)) {
+                it.quoteForWindowsShell()
+            } else {
+                it.quoteForShell()
+            }
+        }
 }
 
 internal fun String.quoteForShell(): String =
-    if (all { it.isLetterOrDigit() || it in "/._:-=" }) {
+    if (isNotEmpty() && all { it.isLetterOrDigit() || it in "/._:-=" }) {
         this
     } else {
         "'${replace("'", "'\\''")}'"
+    }
+
+private fun String.quoteForWindowsShell(): String =
+    if (isNotEmpty() && all { it.isLetterOrDigit() || it in "\\/:._-=" }) {
+        this
+    } else {
+        "\"${replace("\"", "\\\"")}\""
     }
