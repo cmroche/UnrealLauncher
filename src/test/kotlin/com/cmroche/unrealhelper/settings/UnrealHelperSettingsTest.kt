@@ -3,8 +3,10 @@ package com.cmroche.unrealhelper.settings
 import com.cmroche.unrealhelper.discovery.DiscoveredUnrealTarget
 import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryResult
 import com.cmroche.unrealhelper.discovery.UnrealTargetType
+import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.intellij.util.xmlb.XmlSerializer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,6 +64,51 @@ class UnrealHelperSettingsTest {
 
         assertEquals(listOf("Game", "Server"), settings.state.selectedTargetTypes)
         assertEquals(listOf("Win64", "Linux"), settings.state.selectedPlatforms)
+    }
+
+    @Test
+    fun `quick launch profiles survive state serialization`() {
+        val savedState = UnrealHelperSettingsState().also {
+            it.quickLaunchProfiles = mutableListOf(
+                QuickLaunchProfileState(
+                    name = "Game Win64",
+                    targetType = "Game",
+                    platform = "Win64",
+                    executablePath = "/Project/MyGame/Binaries/Win64/MyGame.exe",
+                    workingDirectory = "/Project/MyGame",
+                    arguments = "-log",
+                ),
+            )
+        }
+        val loadedState = XmlSerializer.deserialize(
+            XmlSerializer.serialize(savedState),
+            UnrealHelperSettingsState::class.java,
+        )
+        val settings = UnrealHelperSettings()
+
+        settings.loadState(loadedState)
+
+        val profile = settings.state.quickLaunchProfiles.single()
+        assertEquals("Game Win64", profile.name)
+        assertEquals("Game", profile.targetType)
+        assertEquals("Win64", profile.platform)
+        assertEquals("/Project/MyGame/Binaries/Win64/MyGame.exe", profile.executablePath)
+        assertEquals("/Project/MyGame", profile.workingDirectory)
+        assertEquals("-log", profile.arguments)
+    }
+
+    @Test
+    fun `profile helper returns existing profile or creates default for target platform pair`() {
+        val state = UnrealHelperSettingsState()
+
+        val createdProfile = state.profileFor("Server", "Linux")
+        val existingProfile = state.profileFor("Server", "Linux")
+
+        assertSame(createdProfile, existingProfile)
+        assertEquals("Server Linux", createdProfile.name)
+        assertEquals("Server", createdProfile.targetType)
+        assertEquals("Linux", createdProfile.platform)
+        assertEquals(listOf(createdProfile), state.quickLaunchProfiles)
     }
 
     @Test

@@ -3,15 +3,18 @@ package com.cmroche.unrealhelper.settings
 import com.cmroche.unrealhelper.args.CommandLineArguments
 import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryService
 import com.cmroche.unrealhelper.discovery.UnrealTargetType
+import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.intellij.openapi.components.service
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
+import com.intellij.ui.table.JBTable
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import java.awt.BorderLayout
+import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
@@ -22,6 +25,10 @@ import javax.swing.JButton
 import javax.swing.JCheckBox
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.JTable
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
+import javax.swing.table.AbstractTableModel
 
 class UnrealHelperConfigurable(private val project: Project) : SearchableConfigurable {
     private var rootPanel: JPanel? = null
@@ -35,6 +42,9 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
     private var discoverySummaryArea: JBTextArea? = null
     private var commandLineArea: JBTextArea? = null
     private var applyToRunDebug: JCheckBox? = null
+    private var quickLaunchTable: JBTable? = null
+    private var quickLaunchTableModel: QuickLaunchProfileTableModel? = null
+    private val quickLaunchEditedRows = mutableMapOf<QuickLaunchProfileKey, QuickLaunchProfileRow>()
 
     override fun getId(): String = "com.cmroche.unrealhelper.settings"
 
@@ -56,10 +66,23 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         commandLineArea = JBTextArea(10, 72)
         applyToRunDebug = JCheckBox("Apply global arguments to Rider Run/Debug launches")
         targetTypeCheckboxes = UnrealTargetType.entries.associateWith { JCheckBox(it.name) }
+        quickLaunchTableModel = QuickLaunchProfileTableModel()
+        quickLaunchTable = JBTable(quickLaunchTableModel).also {
+            it.autoResizeMode = JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS
+            it.fillsViewportHeight = true
+            it.rowHeight = it.rowHeight.coerceAtLeast(24)
+            it.columnModel.getColumn(0).preferredWidth = 90
+            it.columnModel.getColumn(1).preferredWidth = 90
+            it.columnModel.getColumn(2).preferredWidth = 260
+            it.columnModel.getColumn(3).preferredWidth = 220
+            it.columnModel.getColumn(4).preferredWidth = 200
+        }
+        addQuickLaunchSelectionListeners()
 
         content.add(projectPanel())
         content.add(discoveryPanel())
         content.add(targetsPanel())
+        content.add(quickLaunchPanel())
         content.add(globalArgsPanel())
 
         val panel = JPanel(BorderLayout())
@@ -81,10 +104,12 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             selectedTargetTypes() != state.selectedTargetTypes ||
             parseCsv(platformsField?.text.orEmpty()) != state.selectedPlatforms ||
             commandLineArea?.text != CommandLineArguments.toEditorText(state.activeCommandLine) ||
-            applyToRunDebug?.isSelected != state.applyToRunDebug
+            applyToRunDebug?.isSelected != state.applyToRunDebug ||
+            quickLaunchRowsModified(state)
     }
 
     override fun apply() {
+        stopQuickLaunchCellEditing()
         val settings = project.service<UnrealHelperSettings>()
         val state = settings.state
 
@@ -97,6 +122,16 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         state.selectedPlatforms = parseCsv(platformsField?.text.orEmpty()).toMutableList()
         state.applyToRunDebug = applyToRunDebug?.isSelected ?: true
         settings.setActiveCommandLine(CommandLineArguments.fromEditorText(commandLineArea?.text.orEmpty()))
+        quickLaunchTableRows().forEach { row ->
+            val profile = state.profileFor(row.targetType, row.platform)
+            profile.name = profile.name.ifBlank { "${row.targetType} ${row.platform}" }
+            profile.targetType = row.targetType
+            profile.platform = row.platform
+            profile.executablePath = row.executablePath
+            profile.workingDirectory = row.workingDirectory
+            profile.arguments = row.arguments
+        }
+        rememberQuickLaunchTableRows()
     }
 
     override fun reset() {
@@ -114,6 +149,8 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         discoverySummaryArea?.text = discoverySummary(state)
         commandLineArea?.text = CommandLineArguments.toEditorText(state.activeCommandLine)
         applyToRunDebug?.isSelected = state.applyToRunDebug
+        quickLaunchEditedRows.clear()
+        refreshQuickLaunchRowsFromSelection(useEditedRows = false)
     }
 
     override fun disposeUIResources() {
@@ -128,6 +165,9 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         discoverySummaryArea = null
         commandLineArea = null
         applyToRunDebug = null
+        quickLaunchTable = null
+        quickLaunchTableModel = null
+        quickLaunchEditedRows.clear()
     }
 
     private fun projectPanel(): JPanel {
@@ -197,6 +237,15 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         return panel
     }
 
+    private fun quickLaunchPanel(): JPanel {
+        val panel = sectionPanel("Quick Launch")
+        val scrollPane = JBScrollPane(quickLaunchTable).also {
+            it.preferredSize = Dimension(0, 132)
+        }
+        panel.add(scrollPane, BorderLayout.CENTER)
+        return panel
+    }
+
     private fun sectionPanel(title: String): JPanel =
         JPanel(BorderLayout(0, 8)).also {
             it.border = BorderFactory.createTitledBorder(title)
@@ -232,6 +281,57 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             ?.takeIf { it in UnrealHelperSettings.BuildConfigurations }
             ?: UnrealHelperSettings.DefaultBuildConfiguration
 
+    private fun addQuickLaunchSelectionListeners() {
+        targetTypeCheckboxes.values.forEach { checkBox ->
+            checkBox.addActionListener {
+                refreshQuickLaunchRowsFromSelection()
+            }
+        }
+        platformsField?.document?.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(event: DocumentEvent) = refreshQuickLaunchRowsFromSelection()
+
+            override fun removeUpdate(event: DocumentEvent) = refreshQuickLaunchRowsFromSelection()
+
+            override fun changedUpdate(event: DocumentEvent) = refreshQuickLaunchRowsFromSelection()
+        })
+    }
+
+    private fun refreshQuickLaunchRowsFromSelection(useEditedRows: Boolean = true) {
+        if (useEditedRows) {
+            rememberQuickLaunchTableRows()
+        }
+
+        val state = project.service<UnrealHelperSettings>().state
+        val rows = selectedTargetTypes().flatMap { targetType ->
+            parseCsv(platformsField?.text.orEmpty()).map { platform ->
+                quickLaunchEditedRows[QuickLaunchProfileKey(targetType, platform)]
+                    ?: state.quickLaunchProfile(targetType, platform)?.toRow()
+                    ?: QuickLaunchProfileRow(targetType = targetType, platform = platform)
+            }
+        }
+        quickLaunchTableModel?.setRows(rows)
+    }
+
+    private fun quickLaunchRowsModified(state: UnrealHelperSettingsState): Boolean =
+        quickLaunchTableRows().any { row ->
+            val savedRow = state.quickLaunchProfile(row.targetType, row.platform)?.toRow()
+                ?: QuickLaunchProfileRow(targetType = row.targetType, platform = row.platform)
+            row != savedRow
+        }
+
+    private fun quickLaunchTableRows(): List<QuickLaunchProfileRow> =
+        quickLaunchTableModel?.snapshot().orEmpty()
+
+    private fun rememberQuickLaunchTableRows() {
+        quickLaunchTableRows().forEach { row ->
+            quickLaunchEditedRows[QuickLaunchProfileKey(row.targetType, row.platform)] = row
+        }
+    }
+
+    private fun stopQuickLaunchCellEditing() {
+        quickLaunchTable?.cellEditor?.stopCellEditing()
+    }
+
     private fun discoverySummary(state: UnrealHelperSettingsState): String {
         val lines = mutableListOf<String>()
         if (state.discoveredTargets.isEmpty()) {
@@ -258,3 +358,83 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             .filter { it.isNotEmpty() }
             .distinct()
 }
+
+private data class QuickLaunchProfileKey(
+    val targetType: String,
+    val platform: String,
+)
+
+private data class QuickLaunchProfileRow(
+    val targetType: String,
+    val platform: String,
+    val executablePath: String = "",
+    val workingDirectory: String = "",
+    val arguments: String = "",
+)
+
+private class QuickLaunchProfileTableModel : AbstractTableModel() {
+    private val columns = listOf("Target Type", "Platform", "Executable", "Working Directory", "Arguments")
+    private var rows = mutableListOf<QuickLaunchProfileRow>()
+
+    override fun getRowCount(): Int = rows.size
+
+    override fun getColumnCount(): Int = columns.size
+
+    override fun getColumnName(column: Int): String = columns[column]
+
+    override fun getColumnClass(columnIndex: Int): Class<*> = String::class.java
+
+    override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean = columnIndex >= EditableColumnStart
+
+    override fun getValueAt(rowIndex: Int, columnIndex: Int): Any =
+        rows[rowIndex].valueAt(columnIndex)
+
+    override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
+        if (!isCellEditable(rowIndex, columnIndex)) return
+
+        val text = value?.toString().orEmpty()
+        rows[rowIndex] = when (columnIndex) {
+            2 -> rows[rowIndex].copy(executablePath = text)
+            3 -> rows[rowIndex].copy(workingDirectory = text)
+            4 -> rows[rowIndex].copy(arguments = text)
+            else -> rows[rowIndex]
+        }
+        fireTableCellUpdated(rowIndex, columnIndex)
+    }
+
+    fun setRows(rows: List<QuickLaunchProfileRow>) {
+        this.rows = rows.toMutableList()
+        fireTableDataChanged()
+    }
+
+    fun snapshot(): List<QuickLaunchProfileRow> = rows.toList()
+
+    private fun QuickLaunchProfileRow.valueAt(columnIndex: Int): String =
+        when (columnIndex) {
+            0 -> targetType
+            1 -> platform
+            2 -> executablePath
+            3 -> workingDirectory
+            4 -> arguments
+            else -> ""
+        }
+
+    private companion object {
+        private const val EditableColumnStart = 2
+    }
+}
+
+private fun UnrealHelperSettingsState.quickLaunchProfile(
+    targetType: String,
+    platform: String,
+): QuickLaunchProfileState? =
+    quickLaunchProfiles.firstOrNull { it.targetType == targetType && it.platform == platform }
+
+private fun QuickLaunchProfileState.toRow(): QuickLaunchProfileRow =
+    QuickLaunchProfileRow(
+        targetType = targetType,
+        platform = platform,
+        executablePath = executablePath,
+        workingDirectory = workingDirectory,
+        arguments = arguments,
+    )

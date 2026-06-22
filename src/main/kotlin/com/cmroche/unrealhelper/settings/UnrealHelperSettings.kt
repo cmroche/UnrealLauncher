@@ -3,6 +3,7 @@ package com.cmroche.unrealhelper.settings
 import com.cmroche.unrealhelper.discovery.DiscoveredUnrealTarget
 import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryResult
 import com.cmroche.unrealhelper.discovery.UnrealTargetType
+import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
@@ -29,6 +30,15 @@ class UnrealHelperSettingsState {
     var savedCommandLines: MutableList<String> = mutableListOf()
     var recentCommandLines: MutableList<String> = mutableListOf()
     var applyToRunDebug: Boolean = true
+    var quickLaunchProfiles: MutableList<QuickLaunchProfileState> = mutableListOf()
+
+    fun profileFor(targetType: String, platform: String): QuickLaunchProfileState =
+        quickLaunchProfiles.firstOrNull { it.targetType == targetType && it.platform == platform }
+            ?: QuickLaunchProfileState(
+                name = "$targetType $platform",
+                targetType = targetType,
+                platform = platform,
+            ).also { quickLaunchProfiles.add(it) }
 }
 
 class UnrealTargetState {
