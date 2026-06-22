@@ -1,19 +1,21 @@
 package com.cmroche.unrealhelper.launch
 
-import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.RunContentExecutor
+import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.OSProcessHandler
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Computable
 
 data class QuickLaunchKey(val targetType: String, val platform: String)
 
 @Service(Service.Level.PROJECT)
 class QuickLaunchProcessService private constructor(
     private val processFactory: QuickLaunchProcessFactory,
-) {
+) : Disposable {
     constructor(project: Project) : this(RiderQuickLaunchProcessFactory(project))
 
     private val lock = Any()
@@ -54,6 +56,10 @@ class QuickLaunchProcessService private constructor(
             }
         }
         processes.forEach { it.destroy() }
+    }
+
+    override fun dispose() {
+        stopAll()
     }
 
     fun isRunning(key: QuickLaunchKey): Boolean =
@@ -114,11 +120,18 @@ private class RiderQuickLaunchProcess(
     private val handler: OSProcessHandler,
     private val title: String,
 ) : QuickLaunchProcess {
+    private val lock = Any()
+
     override val isProcessTerminated: Boolean
         get() = handler.isProcessTerminated
 
     override fun destroy() {
-        handler.destroyProcess()
+        synchronized(lock) {
+            ensureStartNotified()
+            if (!handler.isProcessTerminated && !handler.isProcessTerminating) {
+                handler.destroyProcess()
+            }
+        }
     }
 
     override fun addTerminationListener(listener: () -> Unit) {
@@ -134,8 +147,18 @@ private class RiderQuickLaunchProcess(
     override fun run() {
         RunContentExecutor(project, handler)
             .withTitle(title)
+            .withStop(Runnable { destroy() }, Computable { canStop() })
             .withActivateToolWindow(true)
             .withFocusToolWindow(true)
             .run()
     }
+
+    private fun ensureStartNotified() {
+        if (!handler.isStartNotified) {
+            handler.startNotify()
+        }
+    }
+
+    private fun canStop(): Boolean =
+        !handler.isProcessTerminated && !handler.isProcessTerminating
 }

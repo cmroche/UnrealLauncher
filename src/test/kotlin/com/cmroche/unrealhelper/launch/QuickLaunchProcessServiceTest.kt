@@ -3,7 +3,9 @@ package com.cmroche.unrealhelper.launch
 import com.intellij.execution.configurations.GeneralCommandLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class QuickLaunchProcessServiceTest {
@@ -59,6 +61,24 @@ class QuickLaunchProcessServiceTest {
     }
 
     @Test
+    fun `launch failure removes tracked handler and destroys process`() {
+        val runFailure = IllegalStateException("executor failed")
+        val failingProcess = FakeQuickLaunchProcess(runFailure = runFailure)
+        val factory = FakeQuickLaunchProcessFactory { failingProcess }
+        val service = QuickLaunchProcessService.createForTest(factory)
+        val key = QuickLaunchKey(targetType = "Game", platform = "Win64")
+
+        val thrown = assertThrows(IllegalStateException::class.java) {
+            service.launch(key, commandLine())
+        }
+
+        assertSame(runFailure, thrown)
+        assertTrue(failingProcess.destroyed)
+        assertFalse(service.isRunning(key))
+        assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
+    }
+
+    @Test
     fun `stop removes tracked handler and destroys process`() {
         val factory = FakeQuickLaunchProcessFactory()
         val service = QuickLaunchProcessService.createForTest(factory)
@@ -90,21 +110,40 @@ class QuickLaunchProcessServiceTest {
         assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
     }
 
+    @Test
+    fun `dispose stops tracked handlers and clears running keys`() {
+        val factory = FakeQuickLaunchProcessFactory()
+        val service = QuickLaunchProcessService.createForTest(factory)
+        val game = QuickLaunchKey(targetType = "Game", platform = "Win64")
+        val server = QuickLaunchKey(targetType = "Server", platform = "Linux")
+
+        service.launch(game, commandLine())
+        service.launch(server, commandLine())
+        service.dispose()
+
+        assertTrue(factory.processes.all { it.destroyed })
+        assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
+    }
+
     private fun commandLine(): GeneralCommandLine =
         GeneralCommandLine("/tmp/MyGame")
 }
 
-private class FakeQuickLaunchProcessFactory : QuickLaunchProcessFactory {
+private class FakeQuickLaunchProcessFactory(
+    private val processProvider: () -> FakeQuickLaunchProcess = { FakeQuickLaunchProcess() },
+) : QuickLaunchProcessFactory {
     val titles = mutableListOf<String>()
     val processes = mutableListOf<FakeQuickLaunchProcess>()
 
     override fun create(commandLine: GeneralCommandLine, title: String): QuickLaunchProcess {
         titles += title
-        return FakeQuickLaunchProcess().also { processes += it }
+        return processProvider().also { processes += it }
     }
 }
 
-private class FakeQuickLaunchProcess : QuickLaunchProcess {
+private class FakeQuickLaunchProcess(
+    private val runFailure: RuntimeException? = null,
+) : QuickLaunchProcess {
     var destroyed: Boolean = false
         private set
 
@@ -127,6 +166,7 @@ private class FakeQuickLaunchProcess : QuickLaunchProcess {
     }
 
     override fun run() {
+        runFailure?.let { throw it }
         started = true
     }
 
