@@ -51,17 +51,20 @@
           id="UnrealHelper.BuildAction"
           class="com.cmroche.unrealhelper.actions.UnrealBuildAction"
           text="Build"
-          description="Build selected Unreal targets"/>
+          description="Build selected Unreal targets"
+          icon="com.intellij.icons.AllIcons.Actions.Compile"/>
       <action
           id="UnrealHelper.CookAction"
           class="com.cmroche.unrealhelper.actions.UnrealCookAction"
           text="Cook"
-          description="Cook selected Unreal targets"/>
+          description="Cook selected Unreal targets"
+          icon="/icons/cook.svg"/>
       <action
           id="UnrealHelper.PackageAction"
           class="com.cmroche.unrealhelper.actions.UnrealPackageAction"
           text="Package"
-          description="Package selected Unreal targets"/>
+          description="Package selected Unreal targets"
+          icon="/icons/package.svg"/>
       <action
           id="UnrealHelper.LaunchAction"
           class="com.cmroche.unrealhelper.actions.UnrealLaunchAction"
