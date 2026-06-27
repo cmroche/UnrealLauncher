@@ -46,7 +46,7 @@ internal abstract class UnrealBuildCookPackageAction(
         }
 
         val state = project.service<UnrealHelperSettings>().state
-        event.presentation.isEnabled = canRunBuildCookPackageAction(state)
+        event.presentation.isEnabled = buildCookPackageActionEnabled(state)
     }
 
     final override fun actionPerformed(event: AnActionEvent) {
@@ -142,8 +142,8 @@ internal fun resolveUnrealCommandTargets(
     }
 }
 
-private fun canRunBuildCookPackageAction(state: UnrealHelperSettingsState): Boolean =
-    baseBuildCookPackageValidationError(state) == null
+internal fun buildCookPackageActionEnabled(state: UnrealHelperSettingsState): Boolean =
+    buildCookPackageToolbarValidationError(state) == null
 
 internal fun buildCookPackageValidationError(
     state: UnrealHelperSettingsState,
@@ -157,6 +157,14 @@ private fun baseBuildCookPackageValidationError(state: UnrealHelperSettingsState
         state.uprojectPath.isBlank() -> ".uproject path is not configured"
         state.engineRoot.isBlank() ->
             "Engine root is not configured; set it in Tools > UnrealHelper before running Build, Cook, or Package."
+        normalizedCommandValues(state.selectedTargetTypes).isEmpty() -> "No target types are selected"
+        normalizedCommandValues(state.selectedPlatforms).isEmpty() -> "No platforms are selected"
+        else -> null
+    }
+
+private fun buildCookPackageToolbarValidationError(state: UnrealHelperSettingsState): String? =
+    when {
+        state.uprojectPath.isBlank() -> ".uproject path is not configured"
         normalizedCommandValues(state.selectedTargetTypes).isEmpty() -> "No target types are selected"
         normalizedCommandValues(state.selectedPlatforms).isEmpty() -> "No platforms are selected"
         else -> null

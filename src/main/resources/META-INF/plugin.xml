@@ -17,6 +17,7 @@
     <projectService serviceImplementation="com.cmroche.unrealhelper.settings.UnrealHelperSettings"/>
     <projectService serviceImplementation="com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryService"/>
     <projectService serviceImplementation="com.cmroche.unrealhelper.launch.QuickLaunchProcessService"/>
+    <backgroundPostStartupActivity implementation="com.cmroche.unrealhelper.discovery.UnrealProjectStartupActivity"/>
     <projectConfigurable
         parentId="tools"
         instance="com.cmroche.unrealhelper.settings.UnrealHelperConfigurable"

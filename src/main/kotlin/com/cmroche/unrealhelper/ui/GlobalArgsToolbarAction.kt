@@ -31,6 +31,8 @@ import javax.swing.JComponent
 import javax.swing.JTextField
 import javax.swing.SwingUtilities
 import javax.swing.plaf.basic.BasicComboBoxEditor
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
 import javax.swing.event.PopupMenuEvent
 import javax.swing.event.PopupMenuListener
 
@@ -68,6 +70,21 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
                     textField.background = toolbarBackground()
                     textField.border = null
                     textField.toolTipText = "UnrealHelper global launch arguments"
+                    textField.document.addDocumentListener(object : DocumentListener {
+                        override fun insertUpdate(event: DocumentEvent) = syncFromToolbarText()
+                        override fun removeUpdate(event: DocumentEvent) = syncFromToolbarText()
+                        override fun changedUpdate(event: DocumentEvent) = syncFromToolbarText()
+
+                        private fun syncFromToolbarText() {
+                            if (refreshing) return
+
+                            val currentProject = project() ?: return
+                            syncToolbarCommandLine(
+                                settings = currentProject.service<UnrealHelperSettings>(),
+                                toolbarEditorCommandLine = textField.text,
+                            )
+                        }
+                    })
                     textField.addExtension(
                         ExtendableTextComponent.Extension.create(
                             AllIcons.Actions.ArrowExpand,
@@ -125,7 +142,8 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
 
     private fun editArgs(project: Project, comboBox: ComboBox<String>?) {
         val settings = project.service<UnrealHelperSettings>()
-        val dialog = GlobalArgsEditorDialog(project, settings.state.activeCommandLine)
+        val initialCommandLine = syncToolbarCommandLine(settings, comboBox?.editorCommandLine())
+        val dialog = GlobalArgsEditorDialog(project, initialCommandLine)
 
         if (dialog.showAndGet()) {
             settings.setActiveCommandLine(dialog.commandLine())
@@ -157,6 +175,15 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
             workingDirectory = null,
             arguments = emptyList(),
         )
+
+    private fun ComboBox<String>.editorCommandLine(): String {
+        val editorComponent = editor.editorComponent
+        return if (editorComponent is JTextField) {
+            editorComponent.text
+        } else {
+            editor.item?.toString().orEmpty()
+        }
+    }
 
     private companion object {
         private const val CommandLineInputWidth = 330
@@ -196,4 +223,14 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
             }
         }
     }
+}
+
+internal fun syncToolbarCommandLine(
+    settings: UnrealHelperSettings,
+    toolbarEditorCommandLine: String?,
+): String {
+    if (toolbarEditorCommandLine != null) {
+        settings.setActiveCommandLine(toolbarEditorCommandLine, rememberRecent = false)
+    }
+    return settings.state.activeCommandLine
 }

@@ -4,6 +4,8 @@ import com.cmroche.unrealhelper.command.UnrealCommandBuilder
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UnrealBuildCookPackageActionsTest {
@@ -156,6 +158,30 @@ class UnrealBuildCookPackageActionsTest {
             "Engine root is not configured; set it in Tools > UnrealHelper before running Build, Cook, or Package.",
             buildCookPackageValidationError(settings.state, projectBasePath = "/Workspace/MyGame"),
         )
+    }
+
+    @Test
+    fun `toolbar action is enabled without engine root so execution can report validation error`() {
+        val settings = settings()
+        settings.state.engineRoot = ""
+
+        assertTrue(buildCookPackageActionEnabled(settings.state))
+    }
+
+    @Test
+    fun `toolbar action is disabled until project target and platform are configured`() {
+        val settings = settings()
+
+        settings.state.uprojectPath = ""
+        assertFalse(buildCookPackageActionEnabled(settings.state))
+
+        settings.state.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
+        settings.state.selectedTargetTypes = mutableListOf()
+        assertFalse(buildCookPackageActionEnabled(settings.state))
+
+        settings.state.selectedTargetTypes = mutableListOf("Game")
+        settings.state.selectedPlatforms = mutableListOf()
+        assertFalse(buildCookPackageActionEnabled(settings.state))
     }
 
     private fun settings(): UnrealHelperSettings =
