@@ -15,11 +15,13 @@ data class DiscoveredUnrealTarget(
     val name: String,
     val type: UnrealTargetType,
     val path: String,
+    val usesUniqueBuildEnvironment: Boolean = false,
 )
 
 data class UnrealProjectDiscoveryResult(
     val workspaceRoot: String?,
     val uprojectPath: String?,
+    val engineRoot: String?,
     val targets: List<DiscoveredUnrealTarget>,
     val platforms: List<String>,
     val warnings: List<String>,
@@ -61,6 +63,7 @@ object UnrealProjectDiscovery {
             return UnrealProjectDiscoveryResult(
                 workspaceRoot = null,
                 uprojectPath = null,
+                engineRoot = null,
                 targets = emptyList(),
                 platforms = emptyList(),
                 warnings = listOf("Project path does not exist: $basePath"),
@@ -85,6 +88,7 @@ object UnrealProjectDiscovery {
         return UnrealProjectDiscoveryResult(
             workspaceRoot = workspaceRoot.toString(),
             uprojectPath = selectedUproject?.toString(),
+            engineRoot = discoverEngineRoot(workspaceRoot)?.toString(),
             targets = targets,
             platforms = platforms,
             warnings = warnings,
@@ -132,8 +136,29 @@ object UnrealProjectDiscovery {
             name = targetName,
             type = targetType,
             path = workspaceRoot.relativize(targetFile).toString(),
+            usesUniqueBuildEnvironment = usesUniqueBuildEnvironment(text),
         )
     }
+
+    private fun usesUniqueBuildEnvironment(text: String): Boolean =
+        Regex("""\bBuildEnvironment\s*=\s*TargetBuildEnvironment\.Unique\b""").containsMatchIn(text)
+
+    private fun discoverEngineRoot(workspaceRoot: Path): Path? =
+        generateSequence(workspaceRoot.toAbsolutePath().normalize()) { it.parent }
+            .firstOrNull(::looksLikeEngineRoot)
+
+    private fun looksLikeEngineRoot(path: Path): Boolean =
+        Files.isDirectory(
+            path.resolve("Engine")
+                .resolve("Binaries")
+                .resolve("DotNET")
+                .resolve("UnrealBuildTool"),
+        ) &&
+            Files.isDirectory(
+                path.resolve("Engine")
+                    .resolve("Build")
+                    .resolve("BatchFiles"),
+            )
 
     private fun inferTargetType(targetName: String): UnrealTargetType =
         when {

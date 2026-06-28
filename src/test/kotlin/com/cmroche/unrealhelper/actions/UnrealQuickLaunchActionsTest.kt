@@ -3,6 +3,7 @@ package com.cmroche.unrealhelper.actions
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
+import com.cmroche.unrealhelper.settings.UnrealTargetState
 import com.intellij.openapi.progress.ProcessCanceledException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -130,6 +131,28 @@ class UnrealQuickLaunchActionsTest {
         assertEquals(QuickLaunchKey("Game", "Win64"), launch?.key)
         assertEquals(executable.toString(), launch?.commandLine?.exePath)
         assertTrue(state.quickLaunchProfiles.isEmpty())
+    }
+
+    @Test
+    fun `unique build environment target resolves executable by target name`() {
+        val state = settingsState()
+        state.discoveredTargets = mutableListOf(
+            UnrealTargetState().also {
+                it.name = "MyGameClient"
+                it.type = "Client"
+                it.usesUniqueBuildEnvironment = true
+            },
+        )
+        state.selectedTargetTypes = mutableListOf("Client")
+        val executable = regularFile("Windows/MyGameClient.exe")
+
+        val launch = createQuickLaunchCommand(
+            state = state,
+            key = QuickLaunchKey("Client", "Win64"),
+            packageDirectory = packageDirectory(),
+        )
+
+        assertEquals(executable.toString(), launch?.commandLine?.exePath)
     }
 
     @Test

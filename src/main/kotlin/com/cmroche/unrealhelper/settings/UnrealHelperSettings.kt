@@ -45,6 +45,7 @@ class UnrealTargetState {
     var name: String = ""
     var type: String = UnrealTargetType.Game.name
     var path: String = ""
+    var usesUniqueBuildEnvironment: Boolean = false
 }
 
 @Service(Service.Level.PROJECT)
@@ -96,6 +97,9 @@ class UnrealHelperSettings : PersistentStateComponent<UnrealHelperSettingsState>
         if (state.packageDirectory.isBlank()) {
             state.packageDirectory = defaultPackageDirectory(state.workspaceRoot)
         }
+        if (state.engineRoot.isBlank()) {
+            state.engineRoot = result.engineRoot.orEmpty()
+        }
         if (state.selectedPlatforms.isEmpty() && result.platforms.isNotEmpty()) {
             state.selectedPlatforms = result.platforms.toMutableList()
         }
@@ -137,4 +141,5 @@ private fun DiscoveredUnrealTarget.toState(): UnrealTargetState =
         it.name = name
         it.type = type.name
         it.path = path
+        it.usesUniqueBuildEnvironment = usesUniqueBuildEnvironment
     }

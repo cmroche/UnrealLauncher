@@ -15,4 +15,4 @@ class UnrealProjectStartupActivity : ProjectActivity {
 }
 
 internal fun shouldRefreshProjectOnStartup(settings: UnrealHelperSettings): Boolean =
-    !settings.hasConfiguredProject()
+    !settings.hasConfiguredProject() || settings.state.engineRoot.isBlank()

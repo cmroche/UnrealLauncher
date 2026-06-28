@@ -218,6 +218,7 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
                         it.name = target.name
                         it.type = target.type.name
                         it.path = target.path
+                        it.usesUniqueBuildEnvironment = target.usesUniqueBuildEnvironment
                     }
                 }.toMutableList()
             }

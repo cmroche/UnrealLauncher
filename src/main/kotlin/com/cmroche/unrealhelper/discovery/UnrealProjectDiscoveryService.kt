@@ -14,6 +14,7 @@ class UnrealProjectDiscoveryService(private val project: Project) {
             UnrealProjectDiscoveryResult(
                 workspaceRoot = null,
                 uprojectPath = null,
+                engineRoot = null,
                 targets = emptyList(),
                 platforms = emptyList(),
                 warnings = listOf("Project base path is unavailable."),

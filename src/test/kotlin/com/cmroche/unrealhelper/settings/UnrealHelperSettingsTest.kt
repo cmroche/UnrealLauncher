@@ -218,6 +218,7 @@ class UnrealHelperSettingsTest {
             UnrealProjectDiscoveryResult(
                 workspaceRoot = "/Project/MyGame",
                 uprojectPath = "/Project/MyGame/MyGame.uproject",
+                engineRoot = null,
                 targets = listOf(
                     DiscoveredUnrealTarget("MyGame", UnrealTargetType.Game, "Source/MyGame.Target.cs"),
                     DiscoveredUnrealTarget("MyGameServer", UnrealTargetType.Server, "Source/MyGameServer.Target.cs"),
@@ -238,6 +239,43 @@ class UnrealHelperSettingsTest {
     }
 
     @Test
+    fun `discovery initializes engine root when it is blank`() {
+        val settings = UnrealHelperSettings()
+
+        settings.applyDiscoveryResult(
+            UnrealProjectDiscoveryResult(
+                workspaceRoot = "/Project/Engine/Samples/Games/MyGame",
+                uprojectPath = "/Project/Engine/Samples/Games/MyGame/MyGame.uproject",
+                engineRoot = "/Project/Engine",
+                targets = emptyList(),
+                platforms = emptyList(),
+                warnings = emptyList(),
+            ),
+        )
+
+        assertEquals("/Project/Engine", settings.state.engineRoot)
+    }
+
+    @Test
+    fun `discovery keeps configured engine root`() {
+        val settings = UnrealHelperSettings()
+        settings.state.engineRoot = "/Custom/Engine"
+
+        settings.applyDiscoveryResult(
+            UnrealProjectDiscoveryResult(
+                workspaceRoot = "/Project/Engine/Samples/Games/MyGame",
+                uprojectPath = "/Project/Engine/Samples/Games/MyGame/MyGame.uproject",
+                engineRoot = "/Project/Engine",
+                targets = emptyList(),
+                platforms = emptyList(),
+                warnings = emptyList(),
+            ),
+        )
+
+        assertEquals("/Custom/Engine", settings.state.engineRoot)
+    }
+
+    @Test
     fun `discovery keeps existing package directory and selected platforms`() {
         val settings = UnrealHelperSettings()
         settings.state.packageDirectory = "/Custom/Packages"
@@ -247,6 +285,7 @@ class UnrealHelperSettingsTest {
             UnrealProjectDiscoveryResult(
                 workspaceRoot = "/Project/MyGame",
                 uprojectPath = "/Project/MyGame/MyGame.uproject",
+                engineRoot = null,
                 targets = emptyList(),
                 platforms = listOf("Win64", "PS5"),
                 warnings = emptyList(),

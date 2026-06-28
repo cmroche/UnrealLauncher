@@ -14,9 +14,18 @@ class UnrealProjectStartupActivityTest {
     }
 
     @Test
-    fun `startup discovery does not overwrite configured project`() {
+    fun `startup discovery runs for configured project missing engine root`() {
         val settings = UnrealHelperSettings()
         settings.state.uprojectPath = "/Project/Lyra/Lyra.uproject"
+
+        assertTrue(shouldRefreshProjectOnStartup(settings))
+    }
+
+    @Test
+    fun `startup discovery does not overwrite fully configured project`() {
+        val settings = UnrealHelperSettings()
+        settings.state.uprojectPath = "/Project/Lyra/Lyra.uproject"
+        settings.state.engineRoot = "/Project/UnrealEngine"
 
         assertFalse(shouldRefreshProjectOnStartup(settings))
     }

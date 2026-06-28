@@ -143,8 +143,8 @@ internal data class UnrealStopLaunchSelection(
 internal fun createQuickLaunchOptions(
     state: UnrealHelperSettingsState,
     packageDirectory: Path,
-    resolveExecutable: (QuickLaunchProfileState, Path, Path) -> Path? = { profile, packages, uproject ->
-        CookedExecutableResolver.resolve(profile, packages, uproject)
+    resolveExecutable: (QuickLaunchProfileState, Path, String) -> Path? = { profile, packages, executableName ->
+        CookedExecutableResolver.resolve(profile, packages, executableName)
     },
 ): List<UnrealQuickLaunchOption> {
     if (quickLaunchValidationError(state, packageDirectory.toString()) != null) {
@@ -154,7 +154,8 @@ internal fun createQuickLaunchOptions(
     val uprojectPath = Path.of(state.uprojectPath)
     return selectedQuickLaunchKeys(state).map { key ->
         val profile = quickLaunchProfileForOption(state, key)
-        val executable = resolveExecutable(profile, packageDirectory, uprojectPath)
+        val executableName = executableNameForQuickLaunch(state, key, uprojectPath)
+        val executable = resolveExecutable(profile, packageDirectory, executableName)
         UnrealQuickLaunchOption(
             key = key,
             text = launchOptionText(key, executable),
@@ -167,8 +168,8 @@ internal fun createQuickLaunchCommand(
     state: UnrealHelperSettingsState,
     key: QuickLaunchKey,
     packageDirectory: Path,
-    resolveExecutable: (QuickLaunchProfileState, Path, Path) -> Path? = { profile, packages, uproject ->
-        CookedExecutableResolver.resolve(profile, packages, uproject)
+    resolveExecutable: (QuickLaunchProfileState, Path, String) -> Path? = { profile, packages, executableName ->
+        CookedExecutableResolver.resolve(profile, packages, executableName)
     },
 ): UnrealQuickLaunchCommand? {
     if (quickLaunchValidationError(state, packageDirectory.toString()) != null) {
@@ -177,7 +178,8 @@ internal fun createQuickLaunchCommand(
 
     val profile = quickLaunchProfileForOption(state, key)
     val uprojectPath = Path.of(state.uprojectPath)
-    val executable = resolveExecutable(profile, packageDirectory, uprojectPath) ?: return null
+    val executableName = executableNameForQuickLaunch(state, key, uprojectPath)
+    val executable = resolveExecutable(profile, packageDirectory, executableName) ?: return null
 
     return UnrealQuickLaunchCommand(
         key = key,
@@ -191,8 +193,8 @@ internal fun executeQuickLaunchOption(
     packageDirectory: String,
     launch: (QuickLaunchKey, GeneralCommandLine) -> Unit,
     notifyError: (String) -> Unit,
-    resolveExecutable: (QuickLaunchProfileState, Path, Path) -> Path? = { profile, packages, uproject ->
-        CookedExecutableResolver.resolve(profile, packages, uproject)
+    resolveExecutable: (QuickLaunchProfileState, Path, String) -> Path? = { profile, packages, executableName ->
+        CookedExecutableResolver.resolve(profile, packages, executableName)
     },
 ) {
     if (!option.isEnabled) return
@@ -268,6 +270,18 @@ private fun defaultQuickLaunchProfile(key: QuickLaunchKey): QuickLaunchProfileSt
         targetType = key.targetType,
         platform = key.platform,
     )
+
+private fun executableNameForQuickLaunch(
+    state: UnrealHelperSettingsState,
+    key: QuickLaunchKey,
+    uprojectPath: Path,
+): String {
+    val projectName = CookedExecutableResolver.projectName(uprojectPath)
+    val matchingTarget = state.discoveredTargets.firstOrNull {
+        it.type == key.targetType && it.usesUniqueBuildEnvironment && it.name.isNotBlank()
+    }
+    return matchingTarget?.name ?: projectName
+}
 
 private fun normalizedQuickLaunchValues(values: List<String>): List<String> =
     values
