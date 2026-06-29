@@ -40,4 +40,51 @@ class TargetPlatformConfigurationStoreTest {
         assertEquals(listOf("Client", "Server"), decoded.configurations.single().entries.map { it.targetType })
         assertEquals(listOf("Win64", "Win64"), decoded.configurations.single().entries.map { it.platform })
     }
+
+    @Test
+    fun `configuration file decodes from the expected json shape`() {
+        val decoded = json.decodeFromString(
+            TargetPlatformConfigurationsFile.serializer(),
+            """
+            {
+              "version": 1,
+              "configurations": [
+                {
+                  "name": "Client and Server",
+                  "entries": [
+                    {
+                      "targetType": "Client",
+                      "platform": "Win64",
+                      "arguments": "-server=127.0.0.1",
+                      "executablePath": "Binaries/Win64/TestClient.exe",
+                      "workingDirectory": "Saved/StagedBuilds/Windows"
+                    }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            TargetPlatformConfigurationsFile(
+                version = 1,
+                configurations = listOf(
+                    TargetPlatformConfiguration(
+                        name = "Client and Server",
+                        entries = listOf(
+                            TargetPlatformEntry(
+                                targetType = "Client",
+                                platform = "Win64",
+                                arguments = "-server=127.0.0.1",
+                                executablePath = "Binaries/Win64/TestClient.exe",
+                                workingDirectory = "Saved/StagedBuilds/Windows",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            decoded,
+        )
+    }
 }
