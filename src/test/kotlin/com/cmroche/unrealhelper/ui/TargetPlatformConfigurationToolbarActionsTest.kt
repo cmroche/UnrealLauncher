@@ -1,8 +1,12 @@
 package com.cmroche.unrealhelper.ui
 
+import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
+import com.cmroche.unrealhelper.config.TargetPlatformConfigurationLoadResult
+import com.cmroche.unrealhelper.config.TargetPlatformConfigurationsFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.nio.file.Path
 
 class TargetPlatformConfigurationToolbarActionsTest {
     @Test
@@ -19,5 +23,21 @@ class TargetPlatformConfigurationToolbarActionsTest {
 
         assertEquals("Target & Platform: Client and Server", presentation.text)
         assertEquals("Target & Platform: Client and Server", presentation.description)
+    }
+
+    @Test
+    fun `stale selected name is hidden from loaded presentation`() {
+        val selectedName = targetPlatformConfigurationNameForPresentation(
+            loadResult = TargetPlatformConfigurationLoadResult.Loaded(
+                path = Path.of(".unrealhelper", "target-platforms.json"),
+                file = TargetPlatformConfigurationsFile(
+                    configurations = listOf(TargetPlatformConfiguration("Client and Server")),
+                ),
+                modifiedMillis = 1L,
+            ),
+            selectedName = "Removed",
+        )
+
+        assertEquals("", selectedName)
     }
 }

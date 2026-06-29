@@ -36,13 +36,14 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
         }
 
         val service = project.service<TargetPlatformConfigurationService>()
-        service.clearStaleSelectionIfNeeded()
-
+        val loadResult = service.load()
         val selectedName = project.service<UnrealHelperSettings>().state.selectedTargetPlatformConfigurationName
-        val toolbarPresentation = targetPlatformConfigurationPresentation(selectedName)
+        val toolbarPresentation = targetPlatformConfigurationPresentation(
+            targetPlatformConfigurationNameForPresentation(loadResult, selectedName),
+        )
         event.presentation.text = toolbarPresentation.text
         event.presentation.description = toolbarPresentation.description ?: DefaultDescription
-        event.presentation.isEnabled = service.load() is TargetPlatformConfigurationLoadResult.Loaded
+        event.presentation.isEnabled = loadResult is TargetPlatformConfigurationLoadResult.Loaded
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
@@ -128,4 +129,18 @@ internal fun targetPlatformConfigurationPresentation(selectedName: String): Targ
 
     val text = "Target & Platform: $trimmedName"
     return TargetPlatformConfigurationPresentation(text, text)
+}
+
+internal fun targetPlatformConfigurationNameForPresentation(
+    loadResult: TargetPlatformConfigurationLoadResult,
+    selectedName: String,
+): String {
+    val trimmedName = selectedName.trim()
+    if (loadResult !is TargetPlatformConfigurationLoadResult.Loaded || trimmedName.isEmpty()) {
+        return ""
+    }
+
+    return trimmedName.takeIf { name ->
+        loadResult.file.configurations.any { it.name == name }
+    }.orEmpty()
 }
