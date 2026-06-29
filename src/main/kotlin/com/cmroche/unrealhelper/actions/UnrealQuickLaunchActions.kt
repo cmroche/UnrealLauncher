@@ -139,10 +139,15 @@ internal fun createQuickLaunchCommands(
     }
 
     val uprojectPath = Path.of(state.uprojectPath)
-    return configuration.entries.mapIndexedNotNull { index, entry ->
+    val unresolvedEntries = mutableListOf<String>()
+    val commands = configuration.entries.mapIndexedNotNull { index, entry ->
         val profile = quickLaunchProfileForEntry(configuration, index, entry)
         val executableName = executableNameForQuickLaunch(state, entry.targetType.trim(), uprojectPath)
-        val executable = resolveExecutable(profile, packageDirectory, executableName) ?: return@mapIndexedNotNull null
+        val executable = resolveExecutable(profile, packageDirectory, executableName)
+        if (executable == null) {
+            unresolvedEntries += "entry ${index + 1} ${entry.targetType.trim()} ${entry.platform.trim()}"
+            return@mapIndexedNotNull null
+        }
         UnrealQuickLaunchCommand(
             key = QuickLaunchKey(
                 configurationName = configuration.name,
@@ -153,6 +158,15 @@ internal fun createQuickLaunchCommands(
             commandLine = CookedExecutableResolver.launchCommand(profile, executable, state.activeCommandLine),
         )
     }
+
+    if (unresolvedEntries.isNotEmpty()) {
+        throw IllegalStateException(
+            "Could not resolve cooked executable for selected configuration '${configuration.name}': " +
+                unresolvedEntries.joinToString(", ") + ".",
+        )
+    }
+
+    return commands
 }
 
 internal fun selectedQuickLaunchKeys(configuration: TargetPlatformConfiguration): List<QuickLaunchKey> =

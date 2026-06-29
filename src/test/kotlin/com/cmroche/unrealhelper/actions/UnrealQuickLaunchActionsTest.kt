@@ -6,6 +6,7 @@ import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -67,7 +68,7 @@ class UnrealQuickLaunchActionsTest {
     }
 
     @Test
-    fun `unresolved executable skips selected configuration entry`() {
+    fun `unresolved executable in selected configuration prevents partial launch commands`() {
         val state = settingsState()
         val executable = regularFile("Windows/MyGame.exe")
         val configuration = TargetPlatformConfiguration(
@@ -78,16 +79,21 @@ class UnrealQuickLaunchActionsTest {
             ),
         )
 
-        val commands = createQuickLaunchCommands(
-            state = state,
-            configuration = configuration,
-            packageDirectory = packageDirectory(),
-            resolveExecutable = { profile, _, _ ->
-                if (profile.arguments == "-first") executable else null
-            },
-        )
+        val thrown = assertThrows(IllegalStateException::class.java) {
+            createQuickLaunchCommands(
+                state = state,
+                configuration = configuration,
+                packageDirectory = packageDirectory(),
+                resolveExecutable = { profile, _, _ ->
+                    if (profile.arguments == "-first") executable else null
+                },
+            )
+        }
 
-        assertEquals(listOf(QuickLaunchKey("Three Clients", 0, "Game", "Win64")), commands.map { it.key })
+        assertEquals(
+            "Could not resolve cooked executable for selected configuration 'Three Clients': entry 2 Game Win64.",
+            thrown.message,
+        )
     }
 
     @Test
