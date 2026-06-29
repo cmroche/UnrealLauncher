@@ -18,7 +18,13 @@ class TargetPlatformConfigurationStoreTest {
                 TargetPlatformConfiguration(
                     name = "Client and Server",
                     entries = listOf(
-                        TargetPlatformEntry(targetType = "Client", platform = "Win64", arguments = "-server=127.0.0.1"),
+                        TargetPlatformEntry(
+                            targetType = "Client",
+                            platform = "Win64",
+                            arguments = "-server=127.0.0.1",
+                            executablePath = "Binaries/Win64/TestClient.exe",
+                            workingDirectory = "Saved/StagedBuilds/Windows",
+                        ),
                         TargetPlatformEntry(targetType = "Server", platform = "Win64", arguments = "/Game/Maps/TestMap"),
                     ),
                 ),
