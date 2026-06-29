@@ -16,6 +16,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import javax.swing.JComponent
 
 class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
@@ -95,16 +96,32 @@ class TargetPlatformConfigurationManageAction : DumbAwareAction(
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
         val service = project.service<TargetPlatformConfigurationService>()
-        val initialFile = when (val loadResult = service.load()) {
-            is TargetPlatformConfigurationLoadResult.Loaded -> loadResult.file
-            is TargetPlatformConfigurationLoadResult.Malformed -> TargetPlatformConfigurationsFile()
-            is TargetPlatformConfigurationLoadResult.Missing -> TargetPlatformConfigurationsFile()
+        val loadResult = service.loadForManagement()
+        val loadError = targetPlatformConfigurationManagementError(loadResult)
+        if (loadError != null) {
+            Messages.showErrorDialog(project, loadError, "UnrealHelper")
+            return
         }
-        val dialog = TargetPlatformConfigurationDialog(project, initialFile)
+
+        val initialFile = when (loadResult) {
+            is TargetPlatformConfigurationLoadResult.Loaded -> loadResult.file
+            is TargetPlatformConfigurationLoadResult.Missing -> TargetPlatformConfigurationsFile()
+            is TargetPlatformConfigurationLoadResult.Malformed -> return
+        }
+        val selectedName = project.service<UnrealHelperSettings>().state.selectedTargetPlatformConfigurationName
+        val dialog = TargetPlatformConfigurationDialog(project, initialFile, selectedName)
 
         if (dialog.showAndGet()) {
-            service.save(dialog.configurations())
-            service.clearStaleSelectionIfNeeded()
+            try {
+                service.saveManagedConfigurations(dialog.configurations(), dialog.selectedConfigurationName())
+            } catch (exception: Exception) {
+                Messages.showErrorDialog(
+                    project,
+                    "Could not save Target & Platform configurations: " +
+                        (exception.message ?: exception.javaClass.simpleName),
+                    "UnrealHelper",
+                )
+            }
         }
     }
 
@@ -144,3 +161,14 @@ internal fun targetPlatformConfigurationNameForPresentation(
         loadResult.file.configurations.any { it.name == name }
     }.orEmpty()
 }
+
+internal fun targetPlatformConfigurationManagementError(
+    loadResult: TargetPlatformConfigurationLoadResult,
+): String? =
+    when (loadResult) {
+        is TargetPlatformConfigurationLoadResult.Malformed ->
+            "Could not open Target & Platform configurations from ${loadResult.path}: ${loadResult.message}"
+        is TargetPlatformConfigurationLoadResult.Loaded,
+        is TargetPlatformConfigurationLoadResult.Missing,
+        -> null
+    }

@@ -39,9 +39,28 @@ class TargetPlatformConfigurationService private constructor(
         return store.load(path)
     }
 
+    fun loadForManagement(): TargetPlatformConfigurationLoadResult {
+        migrateLegacySelectionIfNeeded()
+        return load()
+    }
+
     fun save(file: TargetPlatformConfigurationsFile) {
         val path = configurationPath() ?: error(MissingWorkspaceRootMessage)
         store.save(path, file)
+    }
+
+    fun saveManagedConfigurations(
+        file: TargetPlatformConfigurationsFile,
+        dialogSelectedName: String,
+    ) {
+        val previousSelectedName = settings.state.selectedTargetPlatformConfigurationName
+        val normalizedFile = file.normalized()
+        save(normalizedFile)
+        settings.state.selectedTargetPlatformConfigurationName = selectedNameAfterManagedSave(
+            previousSelectedName = previousSelectedName,
+            file = normalizedFile,
+            dialogSelectedName = dialogSelectedName,
+        )
     }
 
     fun migrateLegacySelectionIfNeeded() {
@@ -127,5 +146,24 @@ class TargetPlatformConfigurationService private constructor(
             profiles.firstOrNull {
                 it.targetType.trim() == targetType && it.platform.trim() == platform
             }
+
+        private fun selectedNameAfterManagedSave(
+            previousSelectedName: String,
+            file: TargetPlatformConfigurationsFile,
+            dialogSelectedName: String,
+        ): String {
+            val previousName = previousSelectedName.trim()
+            if (previousName.isEmpty()) {
+                return ""
+            }
+
+            val configurationNames = file.configurations.map { it.name }.toSet()
+            if (previousName in configurationNames) {
+                return previousName
+            }
+
+            val selectedName = dialogSelectedName.trim()
+            return selectedName.takeIf { it in configurationNames }.orEmpty()
+        }
     }
 }

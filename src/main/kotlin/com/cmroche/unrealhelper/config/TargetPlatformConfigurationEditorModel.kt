@@ -1,10 +1,15 @@
 package com.cmroche.unrealhelper.config
 
-class TargetPlatformConfigurationEditorModel(initialFile: TargetPlatformConfigurationsFile) {
+class TargetPlatformConfigurationEditorModel(
+    initialFile: TargetPlatformConfigurationsFile,
+    initialSelectedName: String = "",
+) {
     private val version = initialFile.version
     private val configurations = initialFile.normalized().configurations.toMutableList()
 
-    var selectedName: String = configurations.firstOrNull()?.name.orEmpty()
+    var selectedName: String = initialSelectedName.trim()
+        .takeIf { selected -> configurations.any { it.name == selected } }
+        ?: configurations.firstOrNull()?.name.orEmpty()
         private set
 
     fun snapshot(): TargetPlatformConfigurationsFile =

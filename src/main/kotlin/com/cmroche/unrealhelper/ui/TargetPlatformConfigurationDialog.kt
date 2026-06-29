@@ -24,8 +24,9 @@ import javax.swing.table.AbstractTableModel
 class TargetPlatformConfigurationDialog(
     project: Project,
     initialFile: TargetPlatformConfigurationsFile,
+    initialSelectedName: String = "",
 ) : DialogWrapper(project) {
-    private val model = TargetPlatformConfigurationEditorModel(initialFile)
+    private val model = TargetPlatformConfigurationEditorModel(initialFile, initialSelectedName)
     private val configurationListModel = DefaultListModel<String>()
     private val configurationList = JBList(configurationListModel).also { list ->
         list.selectionMode = ListSelectionModel.SINGLE_SELECTION
@@ -61,6 +62,8 @@ class TargetPlatformConfigurationDialog(
         persistSelectedEntries()
         return model.snapshot()
     }
+
+    fun selectedConfigurationName(): String = model.selectedName
 
     override fun createCenterPanel(): JComponent {
         val panel = JPanel(BorderLayout(8, 8))

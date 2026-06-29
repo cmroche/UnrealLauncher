@@ -30,6 +30,21 @@ class TargetPlatformConfigurationEditorModelTest {
     }
 
     @Test
+    fun `initial selected name is honored when present`() {
+        val model = TargetPlatformConfigurationEditorModel(
+            TargetPlatformConfigurationsFile(
+                configurations = listOf(
+                    TargetPlatformConfiguration("Client"),
+                    TargetPlatformConfiguration("Server"),
+                ),
+            ),
+            initialSelectedName = "Server",
+        )
+
+        assertEquals("Server", model.selectedName)
+    }
+
+    @Test
     fun `add rejects blank configuration name without mutating model`() {
         val initialFile = TargetPlatformConfigurationsFile(
             configurations = listOf(TargetPlatformConfiguration("Game")),

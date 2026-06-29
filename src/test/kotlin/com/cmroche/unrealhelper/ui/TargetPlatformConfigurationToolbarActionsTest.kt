@@ -40,4 +40,28 @@ class TargetPlatformConfigurationToolbarActionsTest {
 
         assertEquals("", selectedName)
     }
+
+    @Test
+    fun `management load error reports malformed configuration`() {
+        val error = targetPlatformConfigurationManagementError(
+            TargetPlatformConfigurationLoadResult.Malformed(
+                path = Path.of("/Project/.unrealhelper/target-platforms.json"),
+                message = "Unexpected JSON",
+            ),
+        )
+
+        assertEquals(
+            "Could not open Target & Platform configurations from /Project/.unrealhelper/target-platforms.json: Unexpected JSON",
+            error,
+        )
+    }
+
+    @Test
+    fun `management load error is absent for missing file`() {
+        assertNull(
+            targetPlatformConfigurationManagementError(
+                TargetPlatformConfigurationLoadResult.Missing(Path.of("/Project/.unrealhelper/target-platforms.json")),
+            ),
+        )
+    }
 }

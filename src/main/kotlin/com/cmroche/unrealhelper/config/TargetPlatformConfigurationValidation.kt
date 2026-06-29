@@ -5,8 +5,9 @@ import java.nio.file.Path
 
 data class TargetPlatformConfigurationFileValidation(
     val duplicateNames: List<String> = emptyList(),
+    val blankNameCount: Int = 0,
 ) {
-    val isValid: Boolean get() = duplicateNames.isEmpty()
+    val isValid: Boolean get() = duplicateNames.isEmpty() && blankNameCount == 0
 }
 
 sealed interface SelectedTargetPlatformConfigurationResult {
@@ -14,6 +15,7 @@ sealed interface SelectedTargetPlatformConfigurationResult {
     data class MissingFile(val path: Path) : SelectedTargetPlatformConfigurationResult
     data class MalformedFile(val path: Path, val message: String) : SelectedTargetPlatformConfigurationResult
     data class DuplicateNames(val names: List<String>) : SelectedTargetPlatformConfigurationResult
+    data class BlankNames(val count: Int) : SelectedTargetPlatformConfigurationResult
     data object NoSelection : SelectedTargetPlatformConfigurationResult
     data class StaleSelection(val selectedName: String) : SelectedTargetPlatformConfigurationResult
     data class EmptyConfiguration(val name: String) : SelectedTargetPlatformConfigurationResult
@@ -21,6 +23,7 @@ sealed interface SelectedTargetPlatformConfigurationResult {
 }
 
 fun validateConfigurationFile(file: TargetPlatformConfigurationsFile): TargetPlatformConfigurationFileValidation {
+    val blankNameCount = file.configurations.count { it.name.isBlank() }
     val duplicateNames = file.configurations
         .groupingBy { it.name }
         .eachCount()
@@ -28,7 +31,10 @@ fun validateConfigurationFile(file: TargetPlatformConfigurationsFile): TargetPla
         .keys
         .toList()
 
-    return TargetPlatformConfigurationFileValidation(duplicateNames = duplicateNames)
+    return TargetPlatformConfigurationFileValidation(
+        duplicateNames = duplicateNames,
+        blankNameCount = blankNameCount,
+    )
 }
 
 fun resolveSelectedTargetPlatformConfiguration(
@@ -51,6 +57,9 @@ private fun resolveLoadedConfiguration(
     state: UnrealHelperSettingsState,
 ): SelectedTargetPlatformConfigurationResult {
     val fileValidation = validateConfigurationFile(file)
+    if (fileValidation.blankNameCount > 0) {
+        return SelectedTargetPlatformConfigurationResult.BlankNames(fileValidation.blankNameCount)
+    }
     if (!fileValidation.isValid) {
         return SelectedTargetPlatformConfigurationResult.DuplicateNames(fileValidation.duplicateNames)
     }

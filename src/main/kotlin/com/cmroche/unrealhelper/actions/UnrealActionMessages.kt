@@ -18,6 +18,8 @@ internal object UnrealActionMessages {
                 "Could not read ${result.path}: ${result.message}"
             is SelectedTargetPlatformConfigurationResult.DuplicateNames ->
                 "Target & Platform configuration names must be unique: ${result.names.joinToString(", ")}"
+            is SelectedTargetPlatformConfigurationResult.BlankNames ->
+                "Target & Platform configuration names must be non-empty. Blank names found: ${result.count}."
             SelectedTargetPlatformConfigurationResult.NoSelection ->
                 "Select a Target & Platform configuration before running this action."
             is SelectedTargetPlatformConfigurationResult.StaleSelection ->

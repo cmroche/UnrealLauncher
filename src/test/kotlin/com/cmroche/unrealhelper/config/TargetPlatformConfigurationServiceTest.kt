@@ -95,6 +95,74 @@ class TargetPlatformConfigurationServiceTest {
     }
 
     @Test
+    fun `management load migrates legacy selected targets before opening dialog`() {
+        val settings = settingsWithWorkspaceRoot().also {
+            it.state.selectedTargetTypes = mutableListOf("Game")
+            it.state.selectedPlatforms = mutableListOf("Win64")
+        }
+        val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
+
+        val result = service.loadForManagement()
+
+        assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
+        result as TargetPlatformConfigurationLoadResult.Loaded
+        assertEquals("Default", result.file.configurations.single().name)
+        assertEquals("Default", settings.state.selectedTargetPlatformConfigurationName)
+    }
+
+    @Test
+    fun `managed save preserves renamed selected configuration`() {
+        val settings = settingsWithWorkspaceRoot().also {
+            it.state.selectedTargetPlatformConfigurationName = "Old"
+        }
+        val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
+        service.save(TargetPlatformConfigurationsFile(configurations = listOf(TargetPlatformConfiguration("Old"))))
+
+        service.saveManagedConfigurations(
+            TargetPlatformConfigurationsFile(configurations = listOf(TargetPlatformConfiguration("New"))),
+            dialogSelectedName = "New",
+        )
+
+        assertEquals("New", settings.state.selectedTargetPlatformConfigurationName)
+    }
+
+    @Test
+    fun `managed save follows dialog selection when selected configuration is deleted`() {
+        val settings = settingsWithWorkspaceRoot().also {
+            it.state.selectedTargetPlatformConfigurationName = "Old"
+        }
+        val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
+        service.save(
+            TargetPlatformConfigurationsFile(
+                configurations = listOf(
+                    TargetPlatformConfiguration("Old"),
+                    TargetPlatformConfiguration("Next"),
+                ),
+            ),
+        )
+
+        service.saveManagedConfigurations(
+            TargetPlatformConfigurationsFile(configurations = listOf(TargetPlatformConfiguration("Next"))),
+            dialogSelectedName = "Next",
+        )
+
+        assertEquals("Next", settings.state.selectedTargetPlatformConfigurationName)
+    }
+
+    @Test
+    fun `managed save keeps no selection when no configuration was previously selected`() {
+        val settings = settingsWithWorkspaceRoot()
+        val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
+
+        service.saveManagedConfigurations(
+            TargetPlatformConfigurationsFile(configurations = listOf(TargetPlatformConfiguration("Game"))),
+            dialogSelectedName = "Game",
+        )
+
+        assertEquals("", settings.state.selectedTargetPlatformConfigurationName)
+    }
+
+    @Test
     fun `stale selected config is cleared`() {
         val settings = settingsWithWorkspaceRoot().also {
             it.state.selectedTargetPlatformConfigurationName = "Removed"

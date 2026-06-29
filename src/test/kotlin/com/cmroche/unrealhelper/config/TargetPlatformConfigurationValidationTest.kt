@@ -23,6 +23,17 @@ class TargetPlatformConfigurationValidationTest {
     }
 
     @Test
+    fun `blank configuration names are invalid`() {
+        val result = validateConfigurationFile(
+            TargetPlatformConfigurationsFile(
+                configurations = listOf(TargetPlatformConfiguration("")),
+            ),
+        )
+
+        assertEquals(1, result.blankNameCount)
+    }
+
+    @Test
     fun `missing selected name asks user to select configuration`() {
         val result = resolveSelectedTargetPlatformConfiguration(
             loadResult = TargetPlatformConfigurationLoadResult.Loaded(Path.of("/Project/.unrealhelper/target-platforms.json"), TargetPlatformConfigurationsFile(), 1L),
