@@ -1,6 +1,8 @@
 package com.cmroche.unrealhelper.actions
 
 import com.cmroche.unrealhelper.command.UnrealCommandBuilder
+import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
+import com.cmroche.unrealhelper.config.TargetPlatformEntry
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import org.junit.Assert.assertEquals
@@ -63,6 +65,52 @@ class UnrealBuildCookPackageActionsTest {
         assertEquals("/Artifacts/MyGame", contexts[0].packageDirectory.toString())
         assertEquals("Shipping", contexts[0].buildConfiguration)
         assertEquals("-log", contexts[0].extraArguments)
+    }
+
+    @Test
+    fun `command contexts come from selected target platform configuration`() {
+        val settings = settings()
+        settings.state.discoveredTargets = mutableListOf(
+            target("MyGameClient", "Client"),
+            target("MyGameServer", "Server"),
+        )
+        val configuration = TargetPlatformConfiguration(
+            name = "Client and Server",
+            entries = listOf(
+                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
+                TargetPlatformEntry(targetType = "Server", platform = "Linux"),
+            ),
+        )
+
+        val contexts = createUnrealCommandContexts(settings, configuration)
+
+        assertEquals(2, contexts.size)
+        assertEquals("MyGameClient", contexts[0].targetName)
+        assertEquals("Client", contexts[0].targetType)
+        assertEquals("Win64", contexts[0].platform)
+        assertEquals("MyGameServer", contexts[1].targetName)
+        assertEquals("Server", contexts[1].targetType)
+        assertEquals("Linux", contexts[1].platform)
+    }
+
+    @Test
+    fun `command contexts deduplicate repeated target platform entries`() {
+        val settings = settings()
+        settings.state.discoveredTargets = mutableListOf(target("MyGameClient", "Client"))
+        val configuration = TargetPlatformConfiguration(
+            name = "Three Clients",
+            entries = listOf(
+                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
+                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
+                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
+            ),
+        )
+
+        val contexts = createUnrealCommandContexts(settings, configuration)
+
+        assertEquals(1, contexts.size)
+        assertEquals("Client", contexts.single().targetType)
+        assertEquals("Win64", contexts.single().platform)
     }
 
     @Test
@@ -169,7 +217,7 @@ class UnrealBuildCookPackageActionsTest {
     }
 
     @Test
-    fun `toolbar action is disabled until project target and platform are configured`() {
+    fun `toolbar action is disabled only until uproject is configured`() {
         val settings = settings()
 
         settings.state.uprojectPath = ""
@@ -177,11 +225,11 @@ class UnrealBuildCookPackageActionsTest {
 
         settings.state.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
         settings.state.selectedTargetTypes = mutableListOf()
-        assertFalse(buildCookPackageActionEnabled(settings.state))
+        assertTrue(buildCookPackageActionEnabled(settings.state))
 
         settings.state.selectedTargetTypes = mutableListOf("Game")
         settings.state.selectedPlatforms = mutableListOf()
-        assertFalse(buildCookPackageActionEnabled(settings.state))
+        assertTrue(buildCookPackageActionEnabled(settings.state))
     }
 
     private fun settings(): UnrealHelperSettings =

@@ -3,18 +3,18 @@ package com.cmroche.unrealhelper.actions
 import com.cmroche.unrealhelper.command.UnrealCommand
 import com.cmroche.unrealhelper.command.UnrealCommandBuilder
 import com.cmroche.unrealhelper.command.UnrealCommandContext
+import com.cmroche.unrealhelper.config.SelectedTargetPlatformConfigurationResult
+import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
+import com.cmroche.unrealhelper.config.TargetPlatformConfigurationService
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import com.cmroche.unrealhelper.terminal.UnrealTerminalRunner
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.DumbAware
-import com.intellij.openapi.project.Project
 import java.nio.file.Path
 
 internal class UnrealBuildAction : UnrealBuildCookPackageAction(
@@ -54,25 +54,28 @@ internal abstract class UnrealBuildCookPackageAction(
         val settings = project.service<UnrealHelperSettings>()
         val state = settings.state
 
+        val selectedConfigurationResult = project.service<TargetPlatformConfigurationService>().selectedConfigurationResult()
+        val selectedConfiguration = when (selectedConfigurationResult) {
+            is SelectedTargetPlatformConfigurationResult.Valid -> selectedConfigurationResult.configuration
+            else -> {
+                UnrealActionMessages.selectedConfigurationError(selectedConfigurationResult)
+                    ?.let { UnrealActionMessages.showError(project, it) }
+                return
+            }
+        }
+
         val error = buildCookPackageValidationError(state, project.basePath)
         if (error != null) {
-            notifyError(project, error)
+            UnrealActionMessages.showError(project, error)
             return
         }
 
         val runner = UnrealTerminalRunner(project)
-        createUnrealCommands(settings, commandFactory, deduplicateCommands, project.basePath)
+        createUnrealCommands(settings, selectedConfiguration, commandFactory, deduplicateCommands, project.basePath)
             .forEach(runner::run)
     }
 
     final override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-
-    private fun notifyError(project: Project, message: String) {
-        NotificationGroupManager.getInstance()
-            .getNotificationGroup("UnrealHelper")
-            .createNotification(message, NotificationType.ERROR)
-            .notify(project)
-    }
 }
 
 internal data class UnrealResolvedCommandTarget(
@@ -87,6 +90,17 @@ internal fun createUnrealCommands(
     projectBasePath: String? = null,
 ): List<UnrealCommand> {
     val commands = createUnrealCommandContexts(settings, projectBasePath).map(commandFactory)
+    return if (deduplicate) uniqueCommands(commands) else commands
+}
+
+internal fun createUnrealCommands(
+    settings: UnrealHelperSettings,
+    configuration: TargetPlatformConfiguration,
+    commandFactory: (UnrealCommandContext) -> UnrealCommand,
+    deduplicate: Boolean,
+    projectBasePath: String? = null,
+): List<UnrealCommand> {
+    val commands = createUnrealCommandContexts(settings, configuration, projectBasePath).map(commandFactory)
     return if (deduplicate) uniqueCommands(commands) else commands
 }
 
@@ -125,6 +139,37 @@ internal fun createUnrealCommandContexts(
     }
 }
 
+internal fun createUnrealCommandContexts(
+    settings: UnrealHelperSettings,
+    configuration: TargetPlatformConfiguration,
+    projectBasePath: String? = null,
+): List<UnrealCommandContext> {
+    val state = settings.state
+    val uprojectPath = Path.of(state.uprojectPath)
+    val workspaceRoot = workspaceRootPath(state, uprojectPath, projectBasePath)
+        ?: throw IllegalStateException("Workspace root is not configured")
+
+    return configuration.entries.flatMap { entry ->
+        resolveUnrealCommandTargets(
+            uprojectPath = state.uprojectPath,
+            selectedTargetTypes = listOf(entry.targetType),
+            discoveredTargets = state.discoveredTargets,
+        ).map { target ->
+            UnrealCommandContext(
+                uprojectPath = uprojectPath,
+                engineRoot = Path.of(state.engineRoot),
+                workspaceRoot = workspaceRoot,
+                packageDirectory = Path.of(settings.effectivePackageDirectory()),
+                buildConfiguration = settings.effectiveBuildConfiguration(),
+                targetName = target.name,
+                targetType = target.type,
+                platform = entry.platform.trim(),
+                extraArguments = state.activeCommandLine,
+            )
+        }
+    }.distinctBy { it.identity() }
+}
+
 internal fun resolveUnrealCommandTargets(
     uprojectPath: String,
     selectedTargetTypes: List<String>,
@@ -143,7 +188,7 @@ internal fun resolveUnrealCommandTargets(
 }
 
 internal fun buildCookPackageActionEnabled(state: UnrealHelperSettingsState): Boolean =
-    buildCookPackageToolbarValidationError(state) == null
+    state.uprojectPath.isNotBlank()
 
 internal fun buildCookPackageValidationError(
     state: UnrealHelperSettingsState,
@@ -157,16 +202,6 @@ private fun baseBuildCookPackageValidationError(state: UnrealHelperSettingsState
         state.uprojectPath.isBlank() -> ".uproject path is not configured"
         state.engineRoot.isBlank() ->
             "Engine root is not configured; set it in Tools > UnrealHelper before running Build, Cook, or Package."
-        normalizedCommandValues(state.selectedTargetTypes).isEmpty() -> "No target types are selected"
-        normalizedCommandValues(state.selectedPlatforms).isEmpty() -> "No platforms are selected"
-        else -> null
-    }
-
-private fun buildCookPackageToolbarValidationError(state: UnrealHelperSettingsState): String? =
-    when {
-        state.uprojectPath.isBlank() -> ".uproject path is not configured"
-        normalizedCommandValues(state.selectedTargetTypes).isEmpty() -> "No target types are selected"
-        normalizedCommandValues(state.selectedPlatforms).isEmpty() -> "No platforms are selected"
         else -> null
     }
 
@@ -212,4 +247,27 @@ private fun normalizedCommandValues(values: List<String>): List<String> =
 private data class UnrealCommandIdentity(
     val commandLine: List<String>,
     val workingDirectory: String,
+)
+
+private fun UnrealCommandContext.identity(): UnrealCommandContextIdentity =
+    UnrealCommandContextIdentity(
+        targetName = targetName,
+        targetType = targetType,
+        platform = platform,
+        buildConfiguration = buildConfiguration,
+        uprojectPath = uprojectPath,
+        engineRoot = engineRoot,
+        workspaceRoot = workspaceRoot,
+        packageDirectory = packageDirectory,
+    )
+
+private data class UnrealCommandContextIdentity(
+    val targetName: String,
+    val targetType: String,
+    val platform: String,
+    val buildConfiguration: String,
+    val uprojectPath: Path,
+    val engineRoot: Path,
+    val workspaceRoot: Path,
+    val packageDirectory: Path,
 )
