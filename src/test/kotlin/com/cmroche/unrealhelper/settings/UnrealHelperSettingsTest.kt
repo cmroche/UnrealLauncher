@@ -69,6 +69,22 @@ class UnrealHelperSettingsTest {
     }
 
     @Test
+    fun `selected target platform configuration name survives state serialization`() {
+        val savedState = UnrealHelperSettingsState().also {
+            it.selectedTargetPlatformConfigurationName = "Client and Server"
+        }
+        val loadedState = XmlSerializer.deserialize(
+            XmlSerializer.serialize(savedState),
+            UnrealHelperSettingsState::class.java,
+        )
+        val settings = UnrealHelperSettings()
+
+        settings.loadState(loadedState)
+
+        assertEquals("Client and Server", settings.state.selectedTargetPlatformConfigurationName)
+    }
+
+    @Test
     fun `quick launch profiles survive state serialization`() {
         val savedState = UnrealHelperSettingsState().also {
             it.quickLaunchProfiles = mutableListOf(

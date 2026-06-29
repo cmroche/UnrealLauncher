@@ -23,6 +23,7 @@ class UnrealHelperSettingsState {
         UnrealTargetType.Server.name,
     )
     var selectedPlatforms: MutableList<String> = mutableListOf()
+    var selectedTargetPlatformConfigurationName: String = ""
     var discoveredTargets: MutableList<UnrealTargetState> = mutableListOf()
     var discoveredPlatforms: MutableList<String> = mutableListOf()
     var discoveryWarnings: MutableList<String> = mutableListOf()
