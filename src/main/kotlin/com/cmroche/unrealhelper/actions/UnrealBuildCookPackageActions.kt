@@ -125,7 +125,7 @@ internal fun createUnrealCommandContexts(
                 extraArguments = state.activeCommandLine,
             )
         }
-    }.distinctBy { it.identity() }
+    }
 }
 
 internal fun resolveUnrealCommandTargets(
@@ -205,27 +205,4 @@ private fun normalizedCommandValues(values: List<String>): List<String> =
 private data class UnrealCommandIdentity(
     val commandLine: List<String>,
     val workingDirectory: String,
-)
-
-private fun UnrealCommandContext.identity(): UnrealCommandContextIdentity =
-    UnrealCommandContextIdentity(
-        targetName = targetName,
-        targetType = targetType,
-        platform = platform,
-        buildConfiguration = buildConfiguration,
-        uprojectPath = uprojectPath,
-        engineRoot = engineRoot,
-        workspaceRoot = workspaceRoot,
-        packageDirectory = packageDirectory,
-    )
-
-private data class UnrealCommandContextIdentity(
-    val targetName: String,
-    val targetType: String,
-    val platform: String,
-    val buildConfiguration: String,
-    val uprojectPath: Path,
-    val engineRoot: Path,
-    val workspaceRoot: Path,
-    val packageDirectory: Path,
 )

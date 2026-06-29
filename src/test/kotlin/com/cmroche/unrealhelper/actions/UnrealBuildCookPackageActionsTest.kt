@@ -76,7 +76,7 @@ class UnrealBuildCookPackageActionsTest {
     }
 
     @Test
-    fun `command contexts deduplicate repeated target platform entries`() {
+    fun `build commands preserve repeated target platform configuration entries`() {
         val settings = settings()
         settings.state.discoveredTargets = mutableListOf(target("MyGameClient", "Client"))
         val configuration = TargetPlatformConfiguration(
@@ -88,11 +88,22 @@ class UnrealBuildCookPackageActionsTest {
             ),
         )
 
-        val contexts = createUnrealCommandContexts(settings, configuration)
+        val commands = createUnrealCommands(
+            settings = settings,
+            configuration = configuration,
+            commandFactory = { UnrealCommandBuilder.build(it) },
+            deduplicate = false,
+        )
 
-        assertEquals(1, contexts.size)
-        assertEquals("Client", contexts.single().targetType)
-        assertEquals("Win64", contexts.single().platform)
+        assertEquals(3, commands.size)
+        assertEquals(
+            listOf(
+                "Unreal Build MyGameClient Client Win64",
+                "Unreal Build MyGameClient Client Win64",
+                "Unreal Build MyGameClient Client Win64",
+            ),
+            commands.map { it.title },
+        )
     }
 
     @Test
