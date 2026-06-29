@@ -39,15 +39,10 @@
           text="UnrealHelper Args"
           description="Edit UnrealHelper global launch arguments"/>
       <action
-          id="UnrealHelper.TargetTypesToolbarAction"
-          class="com.cmroche.unrealhelper.ui.TargetTypesToolbarAction"
-          text="Targets"
-          description="Select Unreal target types"/>
-      <action
-          id="UnrealHelper.PlatformsToolbarAction"
-          class="com.cmroche.unrealhelper.ui.PlatformsToolbarAction"
-          text="Platforms"
-          description="Select Unreal target platforms"/>
+          id="UnrealHelper.TargetPlatformConfigurationSelectorAction"
+          class="com.cmroche.unrealhelper.ui.TargetPlatformConfigurationSelectorAction"
+          text="Target &amp; Platform"
+          description="Select Target &amp; Platform configuration"/>
       <action
           id="UnrealHelper.BuildAction"
           class="com.cmroche.unrealhelper.actions.UnrealBuildAction"
@@ -76,6 +71,12 @@
           class="com.cmroche.unrealhelper.actions.UnrealStopLaunchAction"
           text="Stop"
           description="Stop UnrealHelper quick launches"/>
+      <action
+          id="UnrealHelper.ManageTargetPlatformConfigurationsAction"
+          class="com.cmroche.unrealhelper.ui.TargetPlatformConfigurationManageAction"
+          text="Manage Target &amp; Platform Configurations"
+          description="Create, modify, and delete shared Target &amp; Platform configurations"
+          icon="com.intellij.icons.AllIcons.General.Settings"/>
     </group>
   </actions>
 </idea-plugin>
