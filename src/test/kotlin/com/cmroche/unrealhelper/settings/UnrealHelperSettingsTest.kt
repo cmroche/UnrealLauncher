@@ -4,15 +4,48 @@ import com.cmroche.unrealhelper.discovery.DiscoveredUnrealTarget
 import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryResult
 import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
+import com.intellij.openapi.project.Project
 import com.intellij.util.xmlb.XmlSerializer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import javax.swing.JTable
-import javax.swing.JTextField
+import java.awt.Component
+import java.awt.Container
+import java.lang.reflect.Proxy
+import javax.swing.AbstractButton
+import javax.swing.JComponent
+import javax.swing.JLabel
+import javax.swing.border.TitledBorder
 
 class UnrealHelperSettingsTest {
+    @Test
+    fun `configurable component omits legacy target platform editors`() {
+        val settings = UnrealHelperSettings().also {
+            it.state.selectedTargetTypes = mutableListOf("Game")
+            it.state.selectedPlatforms = mutableListOf("Win64")
+            it.state.quickLaunchProfiles = mutableListOf(
+                QuickLaunchProfileState(
+                    targetType = "Game",
+                    platform = "Win64",
+                    executablePath = "/Project/MyGame.exe",
+                ),
+            )
+        }
+        val configurable = UnrealHelperConfigurable(projectWithSettings(settings))
+
+        val labels = componentTexts(configurable.createComponent())
+
+        assertTrue(labels.contains("Project"))
+        assertTrue(labels.contains("Detection"))
+        assertTrue(labels.contains("Global Run/Debug Args"))
+        assertFalse(labels.contains("Targets And Platforms"))
+        assertFalse(labels.contains("Target Types:"))
+        assertFalse(labels.contains("Platforms:"))
+        assertFalse(labels.contains("Quick Launch"))
+    }
+
     @Test
     fun `defaults enable run debug injection`() {
         val settings = UnrealHelperSettings()
@@ -127,55 +160,6 @@ class UnrealHelperSettingsTest {
         assertEquals("Server", createdProfile.targetType)
         assertEquals("Linux", createdProfile.platform)
         assertEquals(listOf(createdProfile), state.quickLaunchProfiles)
-    }
-
-    @Test
-    fun `quick launch table snapshot includes active executable editor value`() {
-        val model = QuickLaunchProfileTableModel().also {
-            it.setRows(
-                listOf(
-                    QuickLaunchProfileRow(
-                        targetType = "Game",
-                        platform = "Win64",
-                        executablePath = "/Project/Old.exe",
-                    ),
-                ),
-            )
-        }
-        val table = JTable(model)
-
-        assertTrue(table.editCellAt(0, 2))
-        (table.editorComponent as JTextField).text = "/Project/New.exe"
-
-        val modelSnapshot = model.snapshot()
-        val activeEditorSnapshot = quickLaunchRowsWithActiveEditor(modelSnapshot, table)
-
-        assertEquals("/Project/Old.exe", modelSnapshot.single().executablePath)
-        assertEquals("/Project/New.exe", activeEditorSnapshot.single().executablePath)
-    }
-
-    @Test
-    fun `quick launch remembered rows preserve active editor value`() {
-        val model = QuickLaunchProfileTableModel().also {
-            it.setRows(
-                listOf(
-                    QuickLaunchProfileRow(
-                        targetType = "Game",
-                        platform = "Win64",
-                        workingDirectory = "/Project/Old",
-                    ),
-                ),
-            )
-        }
-        val table = JTable(model)
-        val rememberedRows = mutableMapOf<QuickLaunchProfileKey, QuickLaunchProfileRow>()
-
-        assertTrue(table.editCellAt(0, 3))
-        (table.editorComponent as JTextField).text = "/Project/New"
-
-        rememberQuickLaunchRows(quickLaunchRowsWithActiveEditor(model.snapshot(), table), rememberedRows)
-
-        assertEquals("/Project/New", rememberedRows[QuickLaunchProfileKey("Game", "Win64")]?.workingDirectory)
     }
 
     @Test
@@ -310,5 +294,51 @@ class UnrealHelperSettingsTest {
 
         assertEquals("/Custom/Packages", settings.state.packageDirectory)
         assertEquals(listOf("Win64"), settings.state.selectedPlatforms)
+    }
+
+    private fun projectWithSettings(settings: UnrealHelperSettings): Project {
+        val handler = java.lang.reflect.InvocationHandler { proxy, method, args ->
+            when (method.name) {
+                "getService", "getServiceIfCreated" ->
+                    if (args?.firstOrNull() == UnrealHelperSettings::class.java) settings else null
+                "isDisposed" -> false
+                "getName" -> "TestProject"
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === args?.firstOrNull()
+                "toString" -> "TestProject"
+                else -> defaultReturnValue(method.returnType)
+            }
+        }
+        return Proxy.newProxyInstance(
+            Project::class.java.classLoader,
+            arrayOf(Project::class.java),
+            handler,
+        ) as Project
+    }
+
+    private fun defaultReturnValue(returnType: Class<*>): Any? =
+        when (returnType) {
+            java.lang.Boolean.TYPE -> false
+            java.lang.Byte.TYPE -> 0.toByte()
+            java.lang.Short.TYPE -> 0.toShort()
+            java.lang.Integer.TYPE -> 0
+            java.lang.Long.TYPE -> 0L
+            java.lang.Float.TYPE -> 0f
+            java.lang.Double.TYPE -> 0.0
+            java.lang.Character.TYPE -> 0.toChar()
+            else -> null
+        }
+
+    private fun componentTexts(component: Component): List<String> {
+        val texts = mutableListOf<String>()
+        ((component as? JComponent)?.border as? TitledBorder)?.title?.let(texts::add)
+        when (component) {
+            is JLabel -> component.text?.let(texts::add)
+            is AbstractButton -> component.text?.let(texts::add)
+        }
+        if (component is Container) {
+            component.components.flatMapTo(texts) { componentTexts(it) }
+        }
+        return texts
     }
 }
