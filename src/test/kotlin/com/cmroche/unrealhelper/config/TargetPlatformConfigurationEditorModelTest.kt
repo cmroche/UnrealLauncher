@@ -30,6 +30,19 @@ class TargetPlatformConfigurationEditorModelTest {
     }
 
     @Test
+    fun `add rejects blank configuration name without mutating model`() {
+        val initialFile = TargetPlatformConfigurationsFile(
+            configurations = listOf(TargetPlatformConfiguration("Game")),
+        )
+        val model = TargetPlatformConfigurationEditorModel(initialFile)
+
+        assertFalse(model.addConfiguration(" "))
+
+        assertEquals("Game", model.selectedName)
+        assertEquals(initialFile, model.snapshot())
+    }
+
+    @Test
     fun `duplicate uses copy suffix and preserves entries`() {
         val entries = listOf(
             TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-log"),
@@ -95,6 +108,43 @@ class TargetPlatformConfigurationEditorModelTest {
 
         assertEquals("", model.selectedName)
         assertEquals(TargetPlatformConfigurationsFile(), model.snapshot())
+    }
+
+    @Test
+    fun `delete selected chooses next configuration or previous when deleting last`() {
+        val model = TargetPlatformConfigurationEditorModel(
+            TargetPlatformConfigurationsFile(
+                configurations = listOf(
+                    TargetPlatformConfiguration("Game"),
+                    TargetPlatformConfiguration("Editor"),
+                    TargetPlatformConfiguration("Server"),
+                ),
+            ),
+        )
+
+        assertTrue(model.deleteSelected())
+
+        assertEquals("Editor", model.selectedName)
+        assertEquals(
+            TargetPlatformConfigurationsFile(
+                configurations = listOf(
+                    TargetPlatformConfiguration("Editor"),
+                    TargetPlatformConfiguration("Server"),
+                ),
+            ),
+            model.snapshot(),
+        )
+
+        model.select("Server")
+        assertTrue(model.deleteSelected())
+
+        assertEquals("Editor", model.selectedName)
+        assertEquals(
+            TargetPlatformConfigurationsFile(
+                configurations = listOf(TargetPlatformConfiguration("Editor")),
+            ),
+            model.snapshot(),
+        )
     }
 
     @Test
