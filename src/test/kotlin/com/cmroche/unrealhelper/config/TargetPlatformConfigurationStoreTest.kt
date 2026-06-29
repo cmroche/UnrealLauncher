@@ -28,6 +28,7 @@ class TargetPlatformConfigurationStoreTest {
         val encoded = json.encodeToString(TargetPlatformConfigurationsFile.serializer(), file)
         val decoded = json.decodeFromString(TargetPlatformConfigurationsFile.serializer(), encoded)
 
+        assertEquals(file, decoded)
         assertEquals(1, decoded.version)
         assertEquals("Client and Server", decoded.configurations.single().name)
         assertEquals(listOf("Client", "Server"), decoded.configurations.single().entries.map { it.targetType })
