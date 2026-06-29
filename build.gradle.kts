@@ -5,6 +5,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm") version "2.3.21"
+    kotlin("plugin.serialization") version "2.3.21"
     id("org.jetbrains.intellij.platform") version "2.16.0"
 }
 
@@ -19,6 +20,8 @@ repositories {
 }
 
 dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+
     intellijPlatform {
         rider("2026.1.2") {
             useInstaller = false
