@@ -148,6 +148,37 @@ class TargetPlatformConfigurationEditorModelTest {
     }
 
     @Test
+    fun `set entries replaces selected configuration entries with multiple rows`() {
+        val model = TargetPlatformConfigurationEditorModel(
+            TargetPlatformConfigurationsFile(
+                configurations = listOf(
+                    TargetPlatformConfiguration(
+                        "Game",
+                        entries = listOf(TargetPlatformEntry(targetType = "Game", platform = "Win64")),
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(
+            model.setEntries(
+                listOf(
+                    TargetPlatformEntry(targetType = "Client", platform = "Win64", arguments = "-client"),
+                    TargetPlatformEntry(targetType = "Server", platform = "Win64", arguments = "-server"),
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                TargetPlatformEntry(targetType = "Client", platform = "Win64", arguments = "-client"),
+                TargetPlatformEntry(targetType = "Server", platform = "Win64", arguments = "-server"),
+            ),
+            model.snapshot().configurations.single().entries,
+        )
+    }
+
+    @Test
     fun `entry operations preserve duplicates`() {
         val model = TargetPlatformConfigurationEditorModel(
             TargetPlatformConfigurationsFile(
