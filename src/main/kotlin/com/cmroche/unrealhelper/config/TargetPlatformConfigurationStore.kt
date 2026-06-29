@@ -3,8 +3,11 @@ package com.cmroche.unrealhelper.config
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
 class TargetPlatformConfigurationStore(
     private val json: Json = DefaultJson,
@@ -31,8 +34,25 @@ class TargetPlatformConfigurationStore(
     }
 
     fun save(path: Path, file: TargetPlatformConfigurationsFile) {
-        Files.createDirectories(path.parent)
-        Files.writeString(path, json.encodeToString(TargetPlatformConfigurationsFile.serializer(), file.normalized()))
+        val parent = path.parent
+        if (parent != null) {
+            Files.createDirectories(parent)
+        }
+
+        val tempPath = Files.createTempFile(parent ?: Path.of("."), "${path.fileName}.", ".tmp")
+        try {
+            Files.writeString(tempPath, json.encodeToString(TargetPlatformConfigurationsFile.serializer(), file.normalized()))
+            try {
+                Files.move(tempPath, path, REPLACE_EXISTING, ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(tempPath, path, REPLACE_EXISTING)
+            }
+        } finally {
+            try {
+                Files.deleteIfExists(tempPath)
+            } catch (_: IOException) {
+            }
+        }
     }
 
     companion object {

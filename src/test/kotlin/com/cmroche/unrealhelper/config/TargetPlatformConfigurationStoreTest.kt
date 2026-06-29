@@ -176,22 +176,7 @@ class TargetPlatformConfigurationStoreTest {
     @Test
     fun `store creates parent directory and writes JSON`() {
         val path = targetPlatformConfigurationsPath()
-        val file = TargetPlatformConfigurationsFile(
-            configurations = listOf(
-                TargetPlatformConfiguration(
-                    name = "Client and Server",
-                    entries = listOf(
-                        TargetPlatformEntry(
-                            targetType = "Client",
-                            platform = "Win64",
-                            arguments = "-server=127.0.0.1",
-                            executablePath = "Binaries/Win64/TestClient.exe",
-                            workingDirectory = "Saved/StagedBuilds/Windows",
-                        ),
-                    ),
-                ),
-            ),
-        )
+        val file = configurationFile("Client and Server", "Client", "Win64")
 
         TargetPlatformConfigurationStore().save(path, file)
 
@@ -203,8 +188,50 @@ class TargetPlatformConfigurationStoreTest {
         assertEquals(file, result.file)
     }
 
+    @Test
+    fun `store saves parentless path`() {
+        val path = Path.of("target-platforms.json")
+        val file = configurationFile("Game Win64", "Game", "Win64")
+
+        try {
+            TargetPlatformConfigurationStore().save(path, file)
+
+            val result = TargetPlatformConfigurationStore().load(path)
+            assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
+            result as TargetPlatformConfigurationLoadResult.Loaded
+            assertEquals(file, result.file)
+        } finally {
+            Files.deleteIfExists(path)
+        }
+    }
+
+    @Test
+    fun `store overwrites existing file with a loadable full file`() {
+        val path = targetPlatformConfigurationsPath()
+        val store = TargetPlatformConfigurationStore()
+        store.save(path, configurationFile("Game Win64", "Game", "Win64"))
+        val replacement = configurationFile("Server Linux", "Server", "Linux")
+
+        store.save(path, replacement)
+
+        val result = store.load(path)
+        assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
+        result as TargetPlatformConfigurationLoadResult.Loaded
+        assertEquals(replacement, result.file)
+    }
+
     private fun targetPlatformConfigurationsPath(): Path =
         temp.root.toPath()
             .resolve(".unrealhelper")
             .resolve("target-platforms.json")
+
+    private fun configurationFile(name: String, targetType: String, platform: String): TargetPlatformConfigurationsFile =
+        TargetPlatformConfigurationsFile(
+            configurations = listOf(
+                TargetPlatformConfiguration(
+                    name = name,
+                    entries = listOf(TargetPlatformEntry(targetType = targetType, platform = platform)),
+                ),
+            ),
+        )
 }
