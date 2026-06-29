@@ -85,16 +85,6 @@ internal data class UnrealResolvedCommandTarget(
 
 internal fun createUnrealCommands(
     settings: UnrealHelperSettings,
-    commandFactory: (UnrealCommandContext) -> UnrealCommand,
-    deduplicate: Boolean,
-    projectBasePath: String? = null,
-): List<UnrealCommand> {
-    val commands = createUnrealCommandContexts(settings, projectBasePath).map(commandFactory)
-    return if (deduplicate) uniqueCommands(commands) else commands
-}
-
-internal fun createUnrealCommands(
-    settings: UnrealHelperSettings,
     configuration: TargetPlatformConfiguration,
     commandFactory: (UnrealCommandContext) -> UnrealCommand,
     deduplicate: Boolean,
@@ -106,38 +96,6 @@ internal fun createUnrealCommands(
 
 internal fun uniqueCommands(commands: List<UnrealCommand>): List<UnrealCommand> =
     commands.distinctBy { UnrealCommandIdentity(it.asList(), it.workingDirectory) }
-
-internal fun createUnrealCommandContexts(
-    settings: UnrealHelperSettings,
-    projectBasePath: String? = null,
-): List<UnrealCommandContext> {
-    val state = settings.state
-    val uprojectPath = Path.of(state.uprojectPath)
-    val workspaceRoot = workspaceRootPath(state, uprojectPath, projectBasePath)
-        ?: throw IllegalStateException("Workspace root is not configured")
-    val targets = resolveUnrealCommandTargets(
-        uprojectPath = state.uprojectPath,
-        selectedTargetTypes = state.selectedTargetTypes,
-        discoveredTargets = state.discoveredTargets,
-    )
-    val platforms = normalizedCommandValues(state.selectedPlatforms)
-
-    return targets.flatMap { target ->
-        platforms.map { platform ->
-            UnrealCommandContext(
-                uprojectPath = uprojectPath,
-                engineRoot = Path.of(state.engineRoot),
-                workspaceRoot = workspaceRoot,
-                packageDirectory = Path.of(settings.effectivePackageDirectory()),
-                buildConfiguration = settings.effectiveBuildConfiguration(),
-                targetName = target.name,
-                targetType = target.type,
-                platform = platform,
-                extraArguments = state.activeCommandLine,
-            )
-        }
-    }
-}
 
 internal fun createUnrealCommandContexts(
     settings: UnrealHelperSettings,

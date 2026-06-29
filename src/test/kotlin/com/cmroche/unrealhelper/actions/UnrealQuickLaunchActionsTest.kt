@@ -227,8 +227,6 @@ class UnrealQuickLaunchActionsTest {
         UnrealHelperSettingsState().also {
             it.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
             it.packageDirectory = packageDirectory().toString()
-            it.selectedTargetTypes = mutableListOf("Game")
-            it.selectedPlatforms = mutableListOf("Win64")
         }
 
     private fun packageDirectory(): Path = temp.root.toPath()

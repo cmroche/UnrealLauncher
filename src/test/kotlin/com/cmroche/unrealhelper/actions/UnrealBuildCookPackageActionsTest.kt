@@ -44,30 +44,6 @@ class UnrealBuildCookPackageActionsTest {
     }
 
     @Test
-    fun `command contexts include every selected target and platform pair`() {
-        val settings = settings()
-        settings.state.selectedTargetTypes = mutableListOf("Game")
-        settings.state.selectedPlatforms = mutableListOf("Win64", "Linux")
-        settings.state.discoveredTargets = mutableListOf(target("MyGameEditor", "Game"))
-
-        val contexts = createUnrealCommandContexts(settings)
-
-        assertEquals(2, contexts.size)
-        assertEquals("MyGameEditor", contexts[0].targetName)
-        assertEquals("Game", contexts[0].targetType)
-        assertEquals("Win64", contexts[0].platform)
-        assertEquals("MyGameEditor", contexts[1].targetName)
-        assertEquals("Game", contexts[1].targetType)
-        assertEquals("Linux", contexts[1].platform)
-        assertEquals("/Workspace/MyGame/MyGame.uproject", contexts[0].uprojectPath.toString())
-        assertEquals("/Engines/UE_5.6", contexts[0].engineRoot.toString())
-        assertEquals("/Workspace/MyGame", contexts[0].workspaceRoot.toString())
-        assertEquals("/Artifacts/MyGame", contexts[0].packageDirectory.toString())
-        assertEquals("Shipping", contexts[0].buildConfiguration)
-        assertEquals("-log", contexts[0].extraArguments)
-    }
-
-    @Test
     fun `command contexts come from selected target platform configuration`() {
         val settings = settings()
         settings.state.discoveredTargets = mutableListOf(
@@ -91,6 +67,12 @@ class UnrealBuildCookPackageActionsTest {
         assertEquals("MyGameServer", contexts[1].targetName)
         assertEquals("Server", contexts[1].targetType)
         assertEquals("Linux", contexts[1].platform)
+        assertEquals("/Workspace/MyGame/MyGame.uproject", contexts[0].uprojectPath.toString())
+        assertEquals("/Engines/UE_5.6", contexts[0].engineRoot.toString())
+        assertEquals("/Workspace/MyGame", contexts[0].workspaceRoot.toString())
+        assertEquals("/Artifacts/MyGame", contexts[0].packageDirectory.toString())
+        assertEquals("Shipping", contexts[0].buildConfiguration)
+        assertEquals("-log", contexts[0].extraArguments)
     }
 
     @Test
@@ -114,17 +96,23 @@ class UnrealBuildCookPackageActionsTest {
     }
 
     @Test
-    fun `build commands are emitted for every selected target type on one platform`() {
+    fun `build commands are emitted for every selected target platform configuration entry`() {
         val settings = settings()
-        settings.state.selectedTargetTypes = mutableListOf("Game", "Client")
-        settings.state.selectedPlatforms = mutableListOf("Win64")
         settings.state.discoveredTargets = mutableListOf(
             target("MyGameEditor", "Game"),
             target("MyGameClient", "Client"),
         )
+        val configuration = TargetPlatformConfiguration(
+            name = "Build Targets",
+            entries = listOf(
+                TargetPlatformEntry(targetType = "Game", platform = "Win64"),
+                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
+            ),
+        )
 
         val commands = createUnrealCommands(
             settings = settings,
+            configuration = configuration,
             commandFactory = { UnrealCommandBuilder.build(it) },
             deduplicate = false,
         )
@@ -135,17 +123,23 @@ class UnrealBuildCookPackageActionsTest {
     }
 
     @Test
-    fun `cook commands are deduplicated when selected target types generate identical command lines`() {
+    fun `cook commands are deduplicated when configuration entries generate identical command lines`() {
         val settings = settings()
-        settings.state.selectedTargetTypes = mutableListOf("Game", "Client")
-        settings.state.selectedPlatforms = mutableListOf("Win64")
         settings.state.discoveredTargets = mutableListOf(
             target("MyGameEditor", "Game"),
             target("MyGameClient", "Client"),
         )
+        val configuration = TargetPlatformConfiguration(
+            name = "Cook Targets",
+            entries = listOf(
+                TargetPlatformEntry(targetType = "Game", platform = "Win64"),
+                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
+            ),
+        )
 
         val commands = createUnrealCommands(
             settings = settings,
+            configuration = configuration,
             commandFactory = { UnrealCommandBuilder.cook(it) },
             deduplicate = true,
         )
@@ -155,17 +149,23 @@ class UnrealBuildCookPackageActionsTest {
     }
 
     @Test
-    fun `package commands are deduplicated when selected target types generate identical command lines`() {
+    fun `package commands are deduplicated when configuration entries generate identical command lines`() {
         val settings = settings()
-        settings.state.selectedTargetTypes = mutableListOf("Game", "Client")
-        settings.state.selectedPlatforms = mutableListOf("Win64")
         settings.state.discoveredTargets = mutableListOf(
             target("MyGameEditor", "Game"),
             target("MyGameClient", "Client"),
         )
+        val configuration = TargetPlatformConfiguration(
+            name = "Package Targets",
+            entries = listOf(
+                TargetPlatformEntry(targetType = "Game", platform = "Win64"),
+                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
+            ),
+        )
 
         val commands = createUnrealCommands(
             settings = settings,
+            configuration = configuration,
             commandFactory = { UnrealCommandBuilder.packageProject(it) },
             deduplicate = true,
         )
@@ -179,8 +179,12 @@ class UnrealBuildCookPackageActionsTest {
         val settings = settings()
         settings.state.uprojectPath = "MyGame.uproject"
         settings.state.workspaceRoot = ""
+        val configuration = TargetPlatformConfiguration(
+            name = "Default",
+            entries = listOf(TargetPlatformEntry(targetType = "Game", platform = "Win64")),
+        )
 
-        val contexts = createUnrealCommandContexts(settings, projectBasePath = "/Workspace/MyGame")
+        val contexts = createUnrealCommandContexts(settings, configuration, projectBasePath = "/Workspace/MyGame")
 
         assertEquals("/Workspace/MyGame", contexts.single().workspaceRoot.toString())
     }
@@ -224,11 +228,6 @@ class UnrealBuildCookPackageActionsTest {
         assertFalse(buildCookPackageActionEnabled(settings.state))
 
         settings.state.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
-        settings.state.selectedTargetTypes = mutableListOf()
-        assertTrue(buildCookPackageActionEnabled(settings.state))
-
-        settings.state.selectedTargetTypes = mutableListOf("Game")
-        settings.state.selectedPlatforms = mutableListOf()
         assertTrue(buildCookPackageActionEnabled(settings.state))
     }
 
@@ -240,8 +239,6 @@ class UnrealBuildCookPackageActionsTest {
             it.state.packageDirectory = "/Artifacts/MyGame"
             it.state.buildConfiguration = "Shipping"
             it.state.activeCommandLine = "-log"
-            it.state.selectedTargetTypes = mutableListOf("Game")
-            it.state.selectedPlatforms = mutableListOf("Win64")
         }
 
     private fun target(name: String, type: String): UnrealTargetState =
