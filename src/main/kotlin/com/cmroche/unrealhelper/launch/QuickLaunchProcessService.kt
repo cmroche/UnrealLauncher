@@ -10,7 +10,12 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
 
-data class QuickLaunchKey(val targetType: String, val platform: String)
+data class QuickLaunchKey(
+    val configurationName: String,
+    val entryIndex: Int,
+    val targetType: String,
+    val platform: String,
+)
 
 @Service(Service.Level.PROJECT)
 class QuickLaunchProcessService private constructor(
@@ -84,7 +89,7 @@ class QuickLaunchProcessService private constructor(
     }
 
     private fun title(key: QuickLaunchKey): String =
-        "Unreal ${key.targetType} ${key.platform}"
+        "Unreal ${key.configurationName} ${key.entryIndex + 1}: ${key.targetType} ${key.platform}"
 
     companion object {
         internal fun createForTest(processFactory: QuickLaunchProcessFactory): QuickLaunchProcessService =

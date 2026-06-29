@@ -13,13 +13,13 @@ class QuickLaunchProcessServiceTest {
     fun `launch tracks key and executor title`() {
         val factory = FakeQuickLaunchProcessFactory()
         val service = QuickLaunchProcessService.createForTest(factory)
-        val key = QuickLaunchKey(targetType = "Game", platform = "Win64")
+        val key = QuickLaunchKey(configurationName = "Default", entryIndex = 0, targetType = "Game", platform = "Win64")
 
         service.launch(key, commandLine())
 
         assertTrue(service.isRunning(key))
         assertEquals(setOf(key), service.runningKeys())
-        assertEquals(listOf("Unreal Game Win64"), factory.titles)
+        assertEquals(listOf("Unreal Default 1: Game Win64"), factory.titles)
         assertEquals(1, factory.processes.size)
         assertTrue(factory.processes.single().started)
     }
@@ -28,7 +28,7 @@ class QuickLaunchProcessServiceTest {
     fun `relaunching same key stops previous handler and replaces it`() {
         val factory = FakeQuickLaunchProcessFactory()
         val service = QuickLaunchProcessService.createForTest(factory)
-        val key = QuickLaunchKey(targetType = "Client", platform = "Linux")
+        val key = QuickLaunchKey(configurationName = "Default", entryIndex = 0, targetType = "Client", platform = "Linux")
 
         service.launch(key, commandLine())
         val previous = factory.processes.single()
@@ -51,7 +51,7 @@ class QuickLaunchProcessServiceTest {
     fun `termination callback removes the key`() {
         val factory = FakeQuickLaunchProcessFactory()
         val service = QuickLaunchProcessService.createForTest(factory)
-        val key = QuickLaunchKey(targetType = "Server", platform = "Mac")
+        val key = QuickLaunchKey(configurationName = "Default", entryIndex = 0, targetType = "Server", platform = "Mac")
 
         service.launch(key, commandLine())
         factory.processes.single().terminate()
@@ -66,7 +66,7 @@ class QuickLaunchProcessServiceTest {
         val failingProcess = FakeQuickLaunchProcess(runFailure = runFailure)
         val factory = FakeQuickLaunchProcessFactory { failingProcess }
         val service = QuickLaunchProcessService.createForTest(factory)
-        val key = QuickLaunchKey(targetType = "Game", platform = "Win64")
+        val key = QuickLaunchKey(configurationName = "Default", entryIndex = 0, targetType = "Game", platform = "Win64")
 
         val thrown = assertThrows(IllegalStateException::class.java) {
             service.launch(key, commandLine())
@@ -82,7 +82,7 @@ class QuickLaunchProcessServiceTest {
     fun `stop removes tracked handler and destroys process`() {
         val factory = FakeQuickLaunchProcessFactory()
         val service = QuickLaunchProcessService.createForTest(factory)
-        val key = QuickLaunchKey(targetType = "Game", platform = "Win64")
+        val key = QuickLaunchKey(configurationName = "Default", entryIndex = 0, targetType = "Game", platform = "Win64")
 
         service.launch(key, commandLine())
         val process = factory.processes.single()
@@ -97,8 +97,8 @@ class QuickLaunchProcessServiceTest {
     fun `stopAll removes tracked handlers and destroys processes`() {
         val factory = FakeQuickLaunchProcessFactory()
         val service = QuickLaunchProcessService.createForTest(factory)
-        val game = QuickLaunchKey(targetType = "Game", platform = "Win64")
-        val server = QuickLaunchKey(targetType = "Server", platform = "Linux")
+        val game = QuickLaunchKey(configurationName = "Default", entryIndex = 0, targetType = "Game", platform = "Win64")
+        val server = QuickLaunchKey(configurationName = "Default", entryIndex = 1, targetType = "Server", platform = "Linux")
 
         service.launch(game, commandLine())
         service.launch(server, commandLine())
@@ -114,8 +114,8 @@ class QuickLaunchProcessServiceTest {
     fun `dispose stops tracked handlers and clears running keys`() {
         val factory = FakeQuickLaunchProcessFactory()
         val service = QuickLaunchProcessService.createForTest(factory)
-        val game = QuickLaunchKey(targetType = "Game", platform = "Win64")
-        val server = QuickLaunchKey(targetType = "Server", platform = "Linux")
+        val game = QuickLaunchKey(configurationName = "Default", entryIndex = 0, targetType = "Game", platform = "Win64")
+        val server = QuickLaunchKey(configurationName = "Default", entryIndex = 1, targetType = "Server", platform = "Linux")
 
         service.launch(game, commandLine())
         service.launch(server, commandLine())
@@ -123,6 +123,30 @@ class QuickLaunchProcessServiceTest {
 
         assertTrue(factory.processes.all { it.destroyed })
         assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
+    }
+
+    @Test
+    fun `duplicate target platform entries can run independently`() {
+        val factory = FakeQuickLaunchProcessFactory()
+        val service = QuickLaunchProcessService.createForTest(factory)
+        val first = QuickLaunchKey(
+            configurationName = "Three Clients",
+            entryIndex = 0,
+            targetType = "Client",
+            platform = "Win64",
+        )
+        val second = QuickLaunchKey(
+            configurationName = "Three Clients",
+            entryIndex = 1,
+            targetType = "Client",
+            platform = "Win64",
+        )
+
+        service.launch(first, GeneralCommandLine("first"))
+        service.launch(second, GeneralCommandLine("second"))
+
+        assertEquals(setOf(first, second), service.runningKeys())
+        assertEquals(2, factory.processes.size)
     }
 
     private fun commandLine(): GeneralCommandLine =

@@ -1,5 +1,9 @@
 package com.cmroche.unrealhelper.actions
 
+import com.cmroche.unrealhelper.config.SelectedTargetPlatformConfigurationResult
+import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
+import com.cmroche.unrealhelper.config.TargetPlatformConfigurationService
+import com.cmroche.unrealhelper.config.TargetPlatformEntry
 import com.cmroche.unrealhelper.launch.CookedExecutableResolver
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.launch.QuickLaunchProcessService
@@ -7,54 +11,67 @@ import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.actionSystem.DataContext
-import com.intellij.openapi.actionSystem.DefaultActionGroup
-import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.progress.ProcessCanceledException
-import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
-import com.intellij.openapi.project.Project
 import java.nio.file.Path
-import javax.swing.JComponent
 
-internal class UnrealLaunchAction : ComboBoxAction(), DumbAware {
-    init {
-        templatePresentation.text = "Launch"
-        templatePresentation.description = "Launch selected cooked Unreal targets"
-    }
-
+internal class UnrealLaunchAction : DumbAwareAction("Launch", "Launch selected cooked Unreal targets", null) {
     override fun update(event: AnActionEvent) {
         val project = event.project
         event.presentation.isVisible = project != null
+        event.presentation.isEnabled = project != null
+    }
 
-        if (project == null) {
-            event.presentation.isEnabled = false
+    override fun actionPerformed(event: AnActionEvent) {
+        val project = event.project ?: return
+        val settings = project.service<UnrealHelperSettings>()
+        val selectedConfigurationResult = project.service<TargetPlatformConfigurationService>().selectedConfigurationResult()
+        val selectedConfiguration = when (selectedConfigurationResult) {
+            is SelectedTargetPlatformConfigurationResult.Valid -> selectedConfigurationResult.configuration
+            else -> {
+                UnrealActionMessages.selectedConfigurationError(selectedConfigurationResult)
+                    ?.let { UnrealActionMessages.showError(project, it) }
+                return
+            }
+        }
+
+        val packageDirectory = settings.effectivePackageDirectory()
+        val error = quickLaunchValidationError(settings.state, packageDirectory)
+        if (error != null) {
+            UnrealActionMessages.showError(project, error)
             return
         }
 
-        val settings = project.service<UnrealHelperSettings>()
-        event.presentation.isEnabled = quickLaunchValidationError(
-            state = settings.state,
-            packageDirectory = settings.effectivePackageDirectory(),
-        ) == null
-    }
+        try {
+            val commands = createQuickLaunchCommands(
+                state = settings.state,
+                configuration = selectedConfiguration,
+                packageDirectory = Path.of(packageDirectory),
+            )
 
-    override fun createPopupActionGroup(button: JComponent, dataContext: DataContext): DefaultActionGroup {
-        val project = CommonDataKeys.PROJECT.getData(dataContext) ?: return DefaultActionGroup()
-        val settings = project.service<UnrealHelperSettings>()
-        val packageDirectory = settings.effectivePackageDirectory()
-        val packagePath = Path.of(packageDirectory)
-
-        return DefaultActionGroup().also { group ->
-            createQuickLaunchOptions(settings.state, packagePath).forEach { option ->
-                group.add(UnrealLaunchOptionAction(project, option))
+            if (commands.isEmpty()) {
+                UnrealActionMessages.showError(
+                    project,
+                    "Could not resolve any cooked executables for selected configuration '${selectedConfiguration.name}'.",
+                )
+                return
             }
+
+            val processService = project.service<QuickLaunchProcessService>()
+            commands.forEach { command ->
+                processService.launch(command.key, command.commandLine)
+            }
+        } catch (exception: ProcessCanceledException) {
+            throw exception
+        } catch (exception: Exception) {
+            UnrealActionMessages.showError(
+                project,
+                "Failed to launch selected configuration '${selectedConfiguration.name}': " +
+                    (exception.message ?: exception.javaClass.simpleName),
+            )
         }
     }
 
@@ -78,10 +95,14 @@ internal class UnrealStopLaunchAction : DumbAwareAction("Stop", "Stop UnrealHelp
 
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
-        val settings = project.service<UnrealHelperSettings>()
         val processService = project.service<QuickLaunchProcessService>()
+        val selectedConfigurationResult = project.service<TargetPlatformConfigurationService>().selectedConfigurationResult()
+        val selectedKeys = when (selectedConfigurationResult) {
+            is SelectedTargetPlatformConfigurationResult.Valid -> selectedQuickLaunchKeys(selectedConfigurationResult.configuration)
+            else -> emptyList()
+        }
         val selection = stopLaunchSelection(
-            selectedKeys = selectedQuickLaunchKeys(settings.state),
+            selectedKeys = selectedKeys,
             runningKeys = processService.runningKeys(),
         )
 
@@ -95,41 +116,6 @@ internal class UnrealStopLaunchAction : DumbAwareAction("Stop", "Stop UnrealHelp
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 }
 
-private class UnrealLaunchOptionAction(
-    private val project: Project,
-    private val option: UnrealQuickLaunchOption,
-) : DumbAwareAction(option.text) {
-    override fun update(event: AnActionEvent) {
-        event.presentation.isEnabled = option.isEnabled
-    }
-
-    override fun actionPerformed(event: AnActionEvent) {
-        if (!option.isEnabled) return
-
-        val settings = project.service<UnrealHelperSettings>()
-        executeQuickLaunchOption(
-            option = option,
-            state = settings.state,
-            packageDirectory = settings.effectivePackageDirectory(),
-            launch = { key, commandLine ->
-                project.service<QuickLaunchProcessService>().launch(key, commandLine)
-            },
-            notifyError = { notifyLaunchError(project, it) },
-        )
-    }
-
-    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-}
-
-internal data class UnrealQuickLaunchOption(
-    val key: QuickLaunchKey,
-    val text: String,
-    val executable: Path?,
-) {
-    val isEnabled: Boolean
-        get() = executable != null
-}
-
 internal data class UnrealQuickLaunchCommand(
     val key: QuickLaunchKey,
     val commandLine: GeneralCommandLine,
@@ -140,96 +126,44 @@ internal data class UnrealStopLaunchSelection(
     val stopAll: Boolean,
 )
 
-internal fun createQuickLaunchOptions(
+internal fun createQuickLaunchCommands(
     state: UnrealHelperSettingsState,
+    configuration: TargetPlatformConfiguration,
     packageDirectory: Path,
     resolveExecutable: (QuickLaunchProfileState, Path, String) -> Path? = { profile, packages, executableName ->
         CookedExecutableResolver.resolve(profile, packages, executableName)
     },
-): List<UnrealQuickLaunchOption> {
+): List<UnrealQuickLaunchCommand> {
     if (quickLaunchValidationError(state, packageDirectory.toString()) != null) {
         return emptyList()
     }
 
     val uprojectPath = Path.of(state.uprojectPath)
-    return selectedQuickLaunchKeys(state).map { key ->
-        val profile = quickLaunchProfileForOption(state, key)
-        val executableName = executableNameForQuickLaunch(state, key, uprojectPath)
-        val executable = resolveExecutable(profile, packageDirectory, executableName)
-        UnrealQuickLaunchOption(
-            key = key,
-            text = launchOptionText(key, executable),
-            executable = executable,
+    return configuration.entries.mapIndexedNotNull { index, entry ->
+        val profile = quickLaunchProfileForEntry(configuration, index, entry)
+        val executableName = executableNameForQuickLaunch(state, entry.targetType.trim(), uprojectPath)
+        val executable = resolveExecutable(profile, packageDirectory, executableName) ?: return@mapIndexedNotNull null
+        UnrealQuickLaunchCommand(
+            key = QuickLaunchKey(
+                configurationName = configuration.name,
+                entryIndex = index,
+                targetType = entry.targetType.trim(),
+                platform = entry.platform.trim(),
+            ),
+            commandLine = CookedExecutableResolver.launchCommand(profile, executable, state.activeCommandLine),
         )
     }
 }
 
-internal fun createQuickLaunchCommand(
-    state: UnrealHelperSettingsState,
-    key: QuickLaunchKey,
-    packageDirectory: Path,
-    resolveExecutable: (QuickLaunchProfileState, Path, String) -> Path? = { profile, packages, executableName ->
-        CookedExecutableResolver.resolve(profile, packages, executableName)
-    },
-): UnrealQuickLaunchCommand? {
-    if (quickLaunchValidationError(state, packageDirectory.toString()) != null) {
-        return null
-    }
-
-    val profile = quickLaunchProfileForOption(state, key)
-    val uprojectPath = Path.of(state.uprojectPath)
-    val executableName = executableNameForQuickLaunch(state, key, uprojectPath)
-    val executable = resolveExecutable(profile, packageDirectory, executableName) ?: return null
-
-    return UnrealQuickLaunchCommand(
-        key = key,
-        commandLine = CookedExecutableResolver.launchCommand(profile, executable, state.activeCommandLine),
-    )
-}
-
-internal fun executeQuickLaunchOption(
-    option: UnrealQuickLaunchOption,
-    state: UnrealHelperSettingsState,
-    packageDirectory: String,
-    launch: (QuickLaunchKey, GeneralCommandLine) -> Unit,
-    notifyError: (String) -> Unit,
-    resolveExecutable: (QuickLaunchProfileState, Path, String) -> Path? = { profile, packages, executableName ->
-        CookedExecutableResolver.resolve(profile, packages, executableName)
-    },
-) {
-    if (!option.isEnabled) return
-
-    try {
-        val command = createQuickLaunchCommand(
-            state = state,
-            key = option.key,
-            packageDirectory = Path.of(packageDirectory),
-            resolveExecutable = resolveExecutable,
+internal fun selectedQuickLaunchKeys(configuration: TargetPlatformConfiguration): List<QuickLaunchKey> =
+    configuration.entries.mapIndexed { index, entry ->
+        QuickLaunchKey(
+            configurationName = configuration.name,
+            entryIndex = index,
+            targetType = entry.targetType.trim(),
+            platform = entry.platform.trim(),
         )
-
-        if (command == null) {
-            notifyError("Could not resolve cooked executable for ${option.key.label()} under $packageDirectory.")
-            return
-        }
-
-        launch(command.key, command.commandLine)
-    } catch (exception: ProcessCanceledException) {
-        throw exception
-    } catch (exception: Exception) {
-        notifyError("Failed to launch ${option.key.label()}: ${exception.message ?: exception.javaClass.simpleName}")
     }
-}
-
-internal fun selectedQuickLaunchKeys(state: UnrealHelperSettingsState): List<QuickLaunchKey> {
-    val targetTypes = normalizedQuickLaunchValues(state.selectedTargetTypes)
-    val platforms = normalizedQuickLaunchValues(state.selectedPlatforms)
-
-    return targetTypes.flatMap { targetType ->
-        platforms.map { platform ->
-            QuickLaunchKey(targetType = targetType, platform = platform)
-        }
-    }
-}
 
 internal fun stopLaunchSelection(
     selectedKeys: Collection<QuickLaunchKey>,
@@ -251,57 +185,31 @@ internal fun quickLaunchValidationError(
         state.uprojectPath.isBlank() -> ".uproject path is not configured"
         packageDirectory.isBlank() ->
             "Package directory is not configured; set it in Tools > UnrealHelper before launching cooked builds."
-        normalizedQuickLaunchValues(state.selectedTargetTypes).isEmpty() -> "No target types are selected"
-        normalizedQuickLaunchValues(state.selectedPlatforms).isEmpty() -> "No platforms are selected"
         else -> null
     }
 
-private fun quickLaunchProfileForOption(
-    state: UnrealHelperSettingsState,
-    key: QuickLaunchKey,
+private fun quickLaunchProfileForEntry(
+    configuration: TargetPlatformConfiguration,
+    entryIndex: Int,
+    entry: TargetPlatformEntry,
 ): QuickLaunchProfileState =
-    state.quickLaunchProfiles.firstOrNull {
-        it.targetType.trim() == key.targetType && it.platform.trim() == key.platform
-    } ?: defaultQuickLaunchProfile(key)
-
-private fun defaultQuickLaunchProfile(key: QuickLaunchKey): QuickLaunchProfileState =
     QuickLaunchProfileState(
-        name = key.label(),
-        targetType = key.targetType,
-        platform = key.platform,
+        name = "${configuration.name} ${entryIndex + 1}: ${entry.targetType.trim()} ${entry.platform.trim()}",
+        targetType = entry.targetType.trim(),
+        platform = entry.platform.trim(),
+        executablePath = entry.executablePath.trim(),
+        workingDirectory = entry.workingDirectory.trim(),
+        arguments = entry.arguments.trim(),
     )
 
 private fun executableNameForQuickLaunch(
     state: UnrealHelperSettingsState,
-    key: QuickLaunchKey,
+    targetType: String,
     uprojectPath: Path,
 ): String {
     val projectName = CookedExecutableResolver.projectName(uprojectPath)
     val matchingTarget = state.discoveredTargets.firstOrNull {
-        it.type == key.targetType && it.usesUniqueBuildEnvironment && it.name.isNotBlank()
+        it.type == targetType && it.usesUniqueBuildEnvironment && it.name.isNotBlank()
     }
     return matchingTarget?.name ?: projectName
-}
-
-private fun normalizedQuickLaunchValues(values: List<String>): List<String> =
-    values
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .distinct()
-
-private fun launchOptionText(key: QuickLaunchKey, executable: Path?): String =
-    if (executable == null) {
-        "Launch ${key.label()} (cooked executable not found)"
-    } else {
-        "Launch ${key.label()}"
-    }
-
-private fun QuickLaunchKey.label(): String =
-    "$targetType $platform"
-
-private fun notifyLaunchError(project: Project, message: String) {
-    NotificationGroupManager.getInstance()
-        .getNotificationGroup("UnrealHelper")
-        .createNotification(message, NotificationType.ERROR)
-        .notify(project)
 }

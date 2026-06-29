@@ -1,14 +1,11 @@
 package com.cmroche.unrealhelper.actions
 
+import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
+import com.cmroche.unrealhelper.config.TargetPlatformEntry
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
-import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
-import com.intellij.openapi.progress.ProcessCanceledException
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -21,56 +18,76 @@ class UnrealQuickLaunchActionsTest {
     val temp = TemporaryFolder()
 
     @Test
-    fun `selected target and platform pairs build expected launch options`() {
+    fun `launch commands preserve duplicate selected configuration entries`() {
         val state = settingsState()
-        state.selectedTargetTypes = mutableListOf(" Game ", "Server", "Game", "")
-        state.selectedPlatforms = mutableListOf(" Win64 ", "Linux", "Win64", "")
+        state.activeCommandLine = "-global"
+        val executable = regularFile("Windows/MyGame.exe")
+        val workingDirectory = Files.createDirectory(packageDirectory().resolve("Working"))
+        val configuration = TargetPlatformConfiguration(
+            name = "Three Clients",
+            entries = listOf(
+                TargetPlatformEntry(
+                    targetType = "Game",
+                    platform = "Win64",
+                    arguments = "-first",
+                    workingDirectory = workingDirectory.toString(),
+                ),
+                TargetPlatformEntry(
+                    targetType = "Game",
+                    platform = "Win64",
+                    arguments = "-second",
+                    executablePath = executable.toString(),
+                ),
+            ),
+        )
 
-        val options = createQuickLaunchOptions(
+        val commands = createQuickLaunchCommands(
             state = state,
+            configuration = configuration,
             packageDirectory = packageDirectory(),
-            resolveExecutable = { profile, _, _ ->
-                packageDirectory().resolve("${profile.targetType}-${profile.platform}")
-            },
+            resolveExecutable = { _, _, _ -> executable },
         )
 
         assertEquals(
             listOf(
-                QuickLaunchKey("Game", "Win64"),
-                QuickLaunchKey("Game", "Linux"),
-                QuickLaunchKey("Server", "Win64"),
-                QuickLaunchKey("Server", "Linux"),
+                QuickLaunchKey("Three Clients", 0, "Game", "Win64"),
+                QuickLaunchKey("Three Clients", 1, "Game", "Win64"),
             ),
-            options.map { it.key },
+            commands.map { it.key },
         )
         assertEquals(
             listOf(
-                "Launch Game Win64",
-                "Launch Game Linux",
-                "Launch Server Win64",
-                "Launch Server Linux",
+                listOf("-first", "-global"),
+                listOf("-second", "-global"),
             ),
-            options.map { it.text },
+            commands.map { it.commandLine.parametersList.list },
         )
-        assertTrue(options.all { it.isEnabled })
+        assertEquals(workingDirectory, commands.first().commandLine.workingDirectory)
+        assertEquals(executable.parent, commands[1].commandLine.workingDirectory)
     }
 
     @Test
-    fun `unresolved executable produces disabled launch option without creating profile`() {
+    fun `unresolved executable skips selected configuration entry`() {
         val state = settingsState()
-        state.quickLaunchProfiles = mutableListOf()
-
-        val options = createQuickLaunchOptions(
-            state = state,
-            packageDirectory = packageDirectory(),
-            resolveExecutable = { _, _, _ -> null },
+        val executable = regularFile("Windows/MyGame.exe")
+        val configuration = TargetPlatformConfiguration(
+            name = "Three Clients",
+            entries = listOf(
+                TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-first"),
+                TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-second"),
+            ),
         )
 
-        assertEquals(listOf(QuickLaunchKey("Game", "Win64")), options.map { it.key })
-        assertFalse(options.single().isEnabled)
-        assertNull(options.single().executable)
-        assertEquals("Launch Game Win64 (cooked executable not found)", options.single().text)
-        assertTrue(state.quickLaunchProfiles.isEmpty())
+        val commands = createQuickLaunchCommands(
+            state = state,
+            configuration = configuration,
+            packageDirectory = packageDirectory(),
+            resolveExecutable = { profile, _, _ ->
+                if (profile.arguments == "-first") executable else null
+            },
+        )
+
+        assertEquals(listOf(QuickLaunchKey("Three Clients", 0, "Game", "Win64")), commands.map { it.key })
     }
 
     @Test
@@ -84,52 +101,58 @@ class UnrealQuickLaunchActionsTest {
     }
 
     @Test
-    fun `resolved executable builds launch key and command line with profile and global args`() {
+    fun `resolved executable builds launch key and command line with entry and global args`() {
         val state = settingsState()
         val executable = regularFile("Windows/MyGame.exe")
         val workingDirectory = Files.createDirectory(packageDirectory().resolve("Working"))
         state.activeCommandLine = "-log \"-ExecCmds=stat fps\""
-        state.quickLaunchProfiles = mutableListOf(
-            QuickLaunchProfileState(
-                name = "Windows Game",
-                targetType = "Game",
-                platform = "Win64",
-                workingDirectory = workingDirectory.toString(),
-                arguments = "-windowed -resx=1280",
+        val configuration = TargetPlatformConfiguration(
+            name = "Default",
+            entries = listOf(
+                TargetPlatformEntry(
+                    targetType = "Game",
+                    platform = "Win64",
+                    workingDirectory = workingDirectory.toString(),
+                    arguments = "-windowed -resx=1280",
+                ),
             ),
         )
 
-        val launch = createQuickLaunchCommand(
+        val launch = createQuickLaunchCommands(
             state = state,
-            key = QuickLaunchKey("Game", "Win64"),
+            configuration = configuration,
             packageDirectory = packageDirectory(),
             resolveExecutable = { _, _, _ -> executable },
-        )
+        ).single()
 
-        assertEquals(QuickLaunchKey("Game", "Win64"), launch?.key)
-        assertEquals(executable.toString(), launch?.commandLine?.exePath)
-        assertEquals(workingDirectory, launch?.commandLine?.workingDirectory)
+        assertEquals(QuickLaunchKey("Default", 0, "Game", "Win64"), launch.key)
+        assertEquals(executable.toString(), launch.commandLine.exePath)
+        assertEquals(workingDirectory, launch.commandLine.workingDirectory)
         assertEquals(
             listOf("-windowed", "-resx=1280", "-log", "-ExecCmds=stat fps"),
-            launch?.commandLine?.parametersList?.list,
+            launch.commandLine.parametersList.list,
         )
     }
 
     @Test
-    fun `resolved launch command without existing profile does not create persistent profile`() {
+    fun `resolved launch command from entry does not create persistent profile`() {
         val state = settingsState()
         val executable = regularFile("Windows/MyGame.exe")
         state.quickLaunchProfiles = mutableListOf()
-
-        val launch = createQuickLaunchCommand(
-            state = state,
-            key = QuickLaunchKey("Game", "Win64"),
-            packageDirectory = packageDirectory(),
-            resolveExecutable = { _, _, _ -> executable },
+        val configuration = TargetPlatformConfiguration(
+            name = "Default",
+            entries = listOf(TargetPlatformEntry(targetType = "Game", platform = "Win64")),
         )
 
-        assertEquals(QuickLaunchKey("Game", "Win64"), launch?.key)
-        assertEquals(executable.toString(), launch?.commandLine?.exePath)
+        val launch = createQuickLaunchCommands(
+            state = state,
+            configuration = configuration,
+            packageDirectory = packageDirectory(),
+            resolveExecutable = { _, _, _ -> executable },
+        ).single()
+
+        assertEquals(QuickLaunchKey("Default", 0, "Game", "Win64"), launch.key)
+        assertEquals(executable.toString(), launch.commandLine.exePath)
         assertTrue(state.quickLaunchProfiles.isEmpty())
     }
 
@@ -143,127 +166,48 @@ class UnrealQuickLaunchActionsTest {
                 it.usesUniqueBuildEnvironment = true
             },
         )
-        state.selectedTargetTypes = mutableListOf("Client")
         val executable = regularFile("Windows/MyGameClient.exe")
+        val configuration = TargetPlatformConfiguration(
+            name = "Default",
+            entries = listOf(TargetPlatformEntry(targetType = "Client", platform = "Win64")),
+        )
 
-        val launch = createQuickLaunchCommand(
+        val launch = createQuickLaunchCommands(
             state = state,
-            key = QuickLaunchKey("Client", "Win64"),
+            configuration = configuration,
             packageDirectory = packageDirectory(),
-        )
+        ).single()
 
-        assertEquals(executable.toString(), launch?.commandLine?.exePath)
+        assertEquals(executable.toString(), launch.commandLine.exePath)
     }
 
     @Test
-    fun `launch execution notifies when command creation throws`() {
-        val state = settingsState()
-        val option = UnrealQuickLaunchOption(
-            key = QuickLaunchKey("Game", "Win64"),
-            text = "Launch Game Win64",
-            executable = packageDirectory().resolve("Windows/MyGame.exe"),
+    fun `stop selection chooses running keys from selected configuration`() {
+        val first = QuickLaunchKey("Three Clients", 0, "Game", "Win64")
+        val second = QuickLaunchKey("Three Clients", 1, "Game", "Win64")
+        val other = QuickLaunchKey("Other", 0, "Server", "Linux")
+        val configuration = TargetPlatformConfiguration(
+            name = "Three Clients",
+            entries = listOf(
+                TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-first"),
+                TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-second"),
+            ),
         )
-        val notifications = mutableListOf<String>()
-
-        executeQuickLaunchOption(
-            option = option,
-            state = state,
-            packageDirectory = packageDirectory().toString(),
-            launch = { _, _ -> error("launch should not run") },
-            notifyError = { notifications += it },
-            resolveExecutable = { _, _, _ -> throw IllegalArgumentException("bad executable path") },
-        )
-
-        assertEquals(listOf("Failed to launch Game Win64: bad executable path"), notifications)
-    }
-
-    @Test
-    fun `launch execution notifies when cooked executable cannot be resolved`() {
-        val state = settingsState()
-        val option = UnrealQuickLaunchOption(
-            key = QuickLaunchKey("Game", "Win64"),
-            text = "Launch Game Win64",
-            executable = packageDirectory().resolve("Windows/MyGame.exe"),
-        )
-        val notifications = mutableListOf<String>()
-
-        executeQuickLaunchOption(
-            option = option,
-            state = state,
-            packageDirectory = packageDirectory().toString(),
-            launch = { _, _ -> error("launch should not run") },
-            notifyError = { notifications += it },
-            resolveExecutable = { _, _, _ -> null },
-        )
-
-        assertEquals(
-            listOf("Could not resolve cooked executable for Game Win64 under ${packageDirectory()}."),
-            notifications,
-        )
-    }
-
-    @Test
-    fun `launch execution notifies when package directory path is invalid`() {
-        val state = settingsState()
-        val option = UnrealQuickLaunchOption(
-            key = QuickLaunchKey("Game", "Win64"),
-            text = "Launch Game Win64",
-            executable = packageDirectory().resolve("Windows/MyGame.exe"),
-        )
-        val notifications = mutableListOf<String>()
-
-        executeQuickLaunchOption(
-            option = option,
-            state = state,
-            packageDirectory = "\u0000",
-            launch = { _, _ -> error("launch should not run") },
-            notifyError = { notifications += it },
-        )
-
-        assertEquals(1, notifications.size)
-        assertTrue(notifications.single().startsWith("Failed to launch Game Win64:"))
-    }
-
-    @Test
-    fun `launch execution rethrows process cancellation`() {
-        val state = settingsState()
-        val option = UnrealQuickLaunchOption(
-            key = QuickLaunchKey("Game", "Win64"),
-            text = "Launch Game Win64",
-            executable = packageDirectory().resolve("Windows/MyGame.exe"),
-        )
-
-        assertThrows(ProcessCanceledException::class.java) {
-            executeQuickLaunchOption(
-                option = option,
-                state = state,
-                packageDirectory = packageDirectory().toString(),
-                launch = { _, _ -> error("launch should not run") },
-                notifyError = { error("cancellation should not notify") },
-                resolveExecutable = { _, _, _ -> throw ProcessCanceledException() },
-            )
-        }
-    }
-
-    @Test
-    fun `stop selection chooses selected running keys`() {
-        val game = QuickLaunchKey("Game", "Win64")
-        val server = QuickLaunchKey("Server", "Linux")
-        val client = QuickLaunchKey("Client", "Win64")
 
         val selection = stopLaunchSelection(
-            selectedKeys = listOf(game, server),
-            runningKeys = setOf(game, client),
+            selectedKeys = selectedQuickLaunchKeys(configuration),
+            runningKeys = setOf(first, other),
         )
 
-        assertEquals(UnrealStopLaunchSelection(keys = setOf(game), stopAll = false), selection)
+        assertEquals(listOf(first, second), selectedQuickLaunchKeys(configuration))
+        assertEquals(UnrealStopLaunchSelection(keys = setOf(first), stopAll = false), selection)
     }
 
     @Test
     fun `stop selection falls back to all running keys when no selected pair is running`() {
-        val game = QuickLaunchKey("Game", "Win64")
-        val client = QuickLaunchKey("Client", "Win64")
-        val server = QuickLaunchKey("Server", "Linux")
+        val game = QuickLaunchKey("Game Config", 0, "Game", "Win64")
+        val client = QuickLaunchKey("Client Config", 0, "Client", "Win64")
+        val server = QuickLaunchKey("Server Config", 0, "Server", "Linux")
 
         val selection = stopLaunchSelection(
             selectedKeys = listOf(server),
