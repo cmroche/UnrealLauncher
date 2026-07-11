@@ -3,14 +3,22 @@ package com.cmroche.unrealhelper.ui
 import com.cmroche.unrealhelper.config.TargetPlatformConfigurationEditorModel
 import com.cmroche.unrealhelper.config.TargetPlatformConfigurationsFile
 import com.cmroche.unrealhelper.config.TargetPlatformEntry
+import com.cmroche.unrealhelper.config.ProjectRelativePaths
+import com.cmroche.unrealhelper.launch.withDerivedLaunchPaths
+import com.cmroche.unrealhelper.settings.UnrealHelperSettings
+import com.intellij.openapi.components.service
+import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
+import java.nio.file.Paths
 import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JComponent
@@ -22,10 +30,11 @@ import javax.swing.JToolBar
 import javax.swing.table.AbstractTableModel
 
 class TargetPlatformConfigurationDialog(
-    project: Project,
+    private val project: Project,
     initialFile: TargetPlatformConfigurationsFile,
     initialSelectedName: String = "",
 ) : DialogWrapper(project) {
+    private val settings = project.service<UnrealHelperSettings>()
     private val model = TargetPlatformConfigurationEditorModel(initialFile, initialSelectedName)
     private val configurationListModel = DefaultListModel<String>()
     private val configurationList = JBList(configurationListModel).also { list ->
@@ -94,6 +103,8 @@ class TargetPlatformConfigurationDialog(
         JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).also { panel ->
             panel.add(JButton("Add Entry").also { it.addActionListener { addEntry() } })
             panel.add(JButton("Remove Entry").also { it.addActionListener { removeSelectedEntry() } })
+            panel.add(JButton("Choose Executable").also { it.addActionListener { chooseExecutable() } })
+            panel.add(JButton("Choose Working Directory").also { it.addActionListener { chooseWorkingDirectory() } })
         }
 
     private fun addConfiguration() {
@@ -139,7 +150,7 @@ class TargetPlatformConfigurationDialog(
 
     private fun addEntry() {
         stopEntryCellEditing()
-        entryTableModel.addRow()
+        entryTableModel.addRow(defaultEntry())
         val lastRow = entryTableModel.rowCount - 1
         if (lastRow >= 0) {
             entryTable.setRowSelectionInterval(lastRow, lastRow)
@@ -152,6 +163,49 @@ class TargetPlatformConfigurationDialog(
         if (selectedRow >= 0) {
             entryTableModel.removeRow(entryTable.convertRowIndexToModel(selectedRow))
         }
+    }
+
+    private fun chooseExecutable() {
+        choosePath(
+            title = "Choose Executable",
+            chooseDirectory = false,
+            columnIndex = TargetPlatformEntryTableModel.ExecutableColumn,
+        )
+    }
+
+    private fun chooseWorkingDirectory() {
+        choosePath(
+            title = "Choose Working Directory",
+            chooseDirectory = true,
+            columnIndex = TargetPlatformEntryTableModel.WorkingDirectoryColumn,
+        )
+    }
+
+    private fun choosePath(title: String, chooseDirectory: Boolean, columnIndex: Int) {
+        stopEntryCellEditing()
+        val selectedRow = entryTable.selectedRow
+        if (selectedRow < 0) {
+            return
+        }
+
+        val modelRow = entryTable.convertRowIndexToModel(selectedRow)
+        val descriptor = FileChooserDescriptor(
+            !chooseDirectory,
+            chooseDirectory,
+            false,
+            false,
+            false,
+            false,
+        )
+        descriptor.title = title
+
+        val initialPath = entryTableModel.valueAt(modelRow, columnIndex)
+            .takeIf { it.isNotBlank() }
+            ?.let { ProjectRelativePaths.resolveForUse(projectRoot(), it) }
+            ?.let { LocalFileSystem.getInstance().findFileByNioFile(Paths.get(it)) }
+        val selectedFile = FileChooser.chooseFile(descriptor, project, initialPath) ?: return
+        val storedPath = ProjectRelativePaths.storeRelativeTo(projectRoot(), selectedFile.toNioPath().toString())
+        entryTableModel.setValueAt(storedPath, modelRow, columnIndex)
     }
 
     private fun selectConfiguration(name: String?) {
@@ -179,6 +233,7 @@ class TargetPlatformConfigurationDialog(
             .firstOrNull { it.name == model.selectedName }
             ?.entries
             .orEmpty()
+            .map { it.withDerivedDefaults() }
         entryTableModel.setRows(selectedEntries)
     }
 
@@ -234,6 +289,18 @@ class TargetPlatformConfigurationDialog(
         }
         return "$baseName $suffix"
     }
+
+    private fun defaultEntry(): TargetPlatformEntry {
+        val state = settings.state
+        val targetType = state.discoveredTargets.firstOrNull()?.type?.takeIf { it.isNotBlank() } ?: "Game"
+        val platform = state.discoveredPlatforms.firstOrNull()?.takeIf { it.isNotBlank() } ?: "Win64"
+        return TargetPlatformEntry(targetType = targetType, platform = platform).withDerivedDefaults()
+    }
+
+    private fun TargetPlatformEntry.withDerivedDefaults(): TargetPlatformEntry =
+        withDerivedLaunchPaths(settings.state, Paths.get(settings.effectivePackageDirectory()))
+
+    private fun projectRoot() = ProjectRelativePaths.projectRoot(settings.state)
 }
 
 private class TargetPlatformEntryTableModel : AbstractTableModel() {
@@ -260,6 +327,9 @@ private class TargetPlatformEntryTableModel : AbstractTableModel() {
             else -> ""
         }
 
+    fun valueAt(rowIndex: Int, columnIndex: Int): String =
+        getValueAt(rowIndex, columnIndex).toString()
+
     override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
         val text = value?.toString().orEmpty()
         rows[rowIndex] = when (columnIndex) {
@@ -280,8 +350,8 @@ private class TargetPlatformEntryTableModel : AbstractTableModel() {
 
     fun snapshot(): List<TargetPlatformEntry> = rows.toList()
 
-    fun addRow() {
-        rows += TargetPlatformEntry(targetType = "Game", platform = "Win64")
+    fun addRow(entry: TargetPlatformEntry) {
+        rows += entry
         fireTableRowsInserted(rows.lastIndex, rows.lastIndex)
     }
 
@@ -290,5 +360,10 @@ private class TargetPlatformEntryTableModel : AbstractTableModel() {
 
         rows.removeAt(index)
         fireTableRowsDeleted(index, index)
+    }
+
+    companion object {
+        const val ExecutableColumn = 3
+        const val WorkingDirectoryColumn = 4
     }
 }

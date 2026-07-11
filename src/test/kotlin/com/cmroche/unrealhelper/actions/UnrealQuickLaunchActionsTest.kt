@@ -188,6 +188,34 @@ class UnrealQuickLaunchActionsTest {
     }
 
     @Test
+    fun `relative executable and working directory overrides resolve from project root`() {
+        val workspaceRoot = temp.newFolder("Workspace").toPath()
+        val state = settingsState(workspaceRoot)
+        val executable = regularFile(workspaceRoot, "Packages/Windows/MyGame.exe")
+        val workingDirectory = Files.createDirectories(workspaceRoot.resolve("Saved/Launch"))
+        val configuration = TargetPlatformConfiguration(
+            name = "Default",
+            entries = listOf(
+                TargetPlatformEntry(
+                    targetType = "Game",
+                    platform = "Win64",
+                    executablePath = "Packages/Windows/MyGame.exe",
+                    workingDirectory = "Saved/Launch",
+                ),
+            ),
+        )
+
+        val launch = createQuickLaunchCommands(
+            state = state,
+            configuration = configuration,
+            packageDirectory = workspaceRoot.resolve("Packages"),
+        ).single()
+
+        assertEquals(executable.toString(), launch.commandLine.exePath)
+        assertEquals(workingDirectory, launch.commandLine.workingDirectory)
+    }
+
+    @Test
     fun `stop selection chooses running keys from selected configuration`() {
         val first = QuickLaunchKey("Three Clients", 0, "Game", "Win64")
         val second = QuickLaunchKey("Three Clients", 1, "Game", "Win64")
@@ -223,16 +251,23 @@ class UnrealQuickLaunchActionsTest {
         assertEquals(UnrealStopLaunchSelection(keys = setOf(game, client), stopAll = true), selection)
     }
 
-    private fun settingsState(): UnrealHelperSettingsState =
+    private fun settingsState(workspaceRoot: Path = Path.of("/Workspace/MyGame")): UnrealHelperSettingsState =
         UnrealHelperSettingsState().also {
-            it.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
-            it.packageDirectory = packageDirectory().toString()
+            it.workspaceRoot = workspaceRoot.toString()
+            it.uprojectPath = workspaceRoot.resolve("MyGame.uproject").toString()
+            it.packageDirectory = workspaceRoot.resolve("Packages").toString()
         }
 
     private fun packageDirectory(): Path = temp.root.toPath()
 
     private fun regularFile(relativePath: String): Path {
         val path = packageDirectory().resolve(relativePath)
+        Files.createDirectories(path.parent)
+        return Files.createFile(path)
+    }
+
+    private fun regularFile(root: Path, relativePath: String): Path {
+        val path = root.resolve(relativePath)
         Files.createDirectories(path.parent)
         return Files.createFile(path)
     }

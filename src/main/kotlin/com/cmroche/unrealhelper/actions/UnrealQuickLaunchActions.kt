@@ -4,10 +4,12 @@ import com.cmroche.unrealhelper.config.SelectedTargetPlatformConfigurationResult
 import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
 import com.cmroche.unrealhelper.config.TargetPlatformConfigurationService
 import com.cmroche.unrealhelper.config.TargetPlatformEntry
+import com.cmroche.unrealhelper.config.ProjectRelativePaths
 import com.cmroche.unrealhelper.launch.CookedExecutableResolver
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.launch.QuickLaunchProcessService
 import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
+import com.cmroche.unrealhelper.launch.executableNameForLaunch
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.intellij.execution.configurations.GeneralCommandLine
@@ -139,10 +141,11 @@ internal fun createQuickLaunchCommands(
     }
 
     val uprojectPath = Path.of(state.uprojectPath)
+    val projectRoot = ProjectRelativePaths.projectRoot(state)
     val unresolvedEntries = mutableListOf<String>()
     val commands = configuration.entries.mapIndexedNotNull { index, entry ->
-        val profile = quickLaunchProfileForEntry(configuration, index, entry)
-        val executableName = executableNameForQuickLaunch(state, entry.targetType.trim(), uprojectPath)
+        val profile = quickLaunchProfileForEntry(configuration, index, entry, projectRoot)
+        val executableName = executableNameForLaunch(state, entry.targetType.trim(), uprojectPath)
         val executable = resolveExecutable(profile, packageDirectory, executableName)
         if (executable == null) {
             unresolvedEntries += "entry ${index + 1} ${entry.targetType.trim()} ${entry.platform.trim()}"
@@ -206,24 +209,13 @@ private fun quickLaunchProfileForEntry(
     configuration: TargetPlatformConfiguration,
     entryIndex: Int,
     entry: TargetPlatformEntry,
+    projectRoot: Path?,
 ): QuickLaunchProfileState =
     QuickLaunchProfileState(
         name = "${configuration.name} ${entryIndex + 1}: ${entry.targetType.trim()} ${entry.platform.trim()}",
         targetType = entry.targetType.trim(),
         platform = entry.platform.trim(),
-        executablePath = entry.executablePath.trim(),
-        workingDirectory = entry.workingDirectory.trim(),
+        executablePath = ProjectRelativePaths.resolveForUse(projectRoot, entry.executablePath),
+        workingDirectory = ProjectRelativePaths.resolveForUse(projectRoot, entry.workingDirectory),
         arguments = entry.arguments.trim(),
     )
-
-private fun executableNameForQuickLaunch(
-    state: UnrealHelperSettingsState,
-    targetType: String,
-    uprojectPath: Path,
-): String {
-    val projectName = CookedExecutableResolver.projectName(uprojectPath)
-    val matchingTarget = state.discoveredTargets.firstOrNull {
-        it.type == targetType && it.usesUniqueBuildEnvironment && it.name.isNotBlank()
-    }
-    return matchingTarget?.name ?: projectName
-}

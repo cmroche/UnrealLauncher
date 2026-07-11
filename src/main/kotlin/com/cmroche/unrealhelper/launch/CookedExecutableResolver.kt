@@ -48,7 +48,7 @@ object CookedExecutableResolver {
         return commandLine
     }
 
-    private fun candidatePaths(packageDirectory: Path, platform: String, projectName: String): List<Path> =
+    internal fun candidatePaths(packageDirectory: Path, platform: String, projectName: String): List<Path> =
         when {
             platform.equals("Win64", ignoreCase = true) -> listOf(
                 packageDirectory.resolve("Windows").resolve("$projectName.exe"),

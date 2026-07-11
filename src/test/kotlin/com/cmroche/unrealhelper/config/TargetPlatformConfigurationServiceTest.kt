@@ -62,6 +62,41 @@ class TargetPlatformConfigurationServiceTest {
     }
 
     @Test
+    fun `managed save stores executable and working directory paths relative to project root`() {
+        val settings = settingsWithWorkspaceRoot()
+        val workspaceRoot = temp.root.toPath()
+        val executable = workspaceRoot.resolve("Packages/Windows/MyGame.exe")
+        val workingDirectory = workspaceRoot.resolve("Saved/Launch")
+        val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
+
+        service.saveManagedConfigurations(
+            TargetPlatformConfigurationsFile(
+                configurations = listOf(
+                    TargetPlatformConfiguration(
+                        "Game Win64",
+                        listOf(
+                            TargetPlatformEntry(
+                                targetType = "Game",
+                                platform = "Win64",
+                                executablePath = executable.toString(),
+                                workingDirectory = workingDirectory.toString(),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            dialogSelectedName = "Game Win64",
+        )
+
+        val result = service.load()
+        assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
+        result as TargetPlatformConfigurationLoadResult.Loaded
+        val entry = result.file.configurations.single().entries.single()
+        assertEquals("Packages/Windows/MyGame.exe", entry.executablePath)
+        assertEquals("Saved/Launch", entry.workingDirectory)
+    }
+
+    @Test
     fun `legacy selected targets migrate to default shared config when file is missing`() {
         val settings = settingsWithWorkspaceRoot().also {
             it.state.selectedTargetTypes = mutableListOf("Game", "Server")
