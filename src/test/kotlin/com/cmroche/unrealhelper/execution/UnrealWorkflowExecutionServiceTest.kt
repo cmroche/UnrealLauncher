@@ -113,6 +113,27 @@ class UnrealWorkflowExecutionServiceTest {
     }
 
     @Test
+    fun `workflow launch termination completes restart after a newer same-key launch registers`() {
+        val fixture = fixture()
+        val launch = Launch(clientArtifact, "Development", 0, "", "")
+        fixture.service.start(plan(UnrealWorkflowRequest.LAUNCH, launch))
+        val oldProcess = fixture.executor.current
+        oldProcess.startSuccessfully()
+        val replacementAction = BuildBatch(setOf(clientArtifact))
+        val replacement = plan(UnrealWorkflowRequest.BUILD, replacementAction)
+
+        fixture.service.stopAndRestart(replacement, fixture.service.conflictFor(replacement)!!)
+        val newerProcess = FakeWorkflowProcess()
+        fixture.service.launchStarted(launch, newerProcess)
+
+        oldProcess.terminate(143)
+
+        assertEquals(listOf(launch, replacementAction), fixture.executor.createdActions)
+        assertEquals(1, fixture.launchService.runningLaunches().size)
+        assertFalse(newerProcess.destroyCalled)
+    }
+
+    @Test
     fun `stop and restart waits for queue and selected launches and preserves nonconflicting launches`() {
         val fixture = fixture()
         val currentAction = Cook(clientArtifact, UnrealCookMode.FULL)

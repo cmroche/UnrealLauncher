@@ -11,6 +11,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
+import java.util.IdentityHashMap
 
 data class QuickLaunchKey(
     val configurationName: String,
@@ -44,6 +45,7 @@ class QuickLaunchProcessService private constructor(
 
     private val lock = Any()
     private val runningProcesses = mutableMapOf<QuickLaunchKey, TrackedLaunch>()
+    private val workflowProcesses = IdentityHashMap<UnrealWorkflowProcess, WorkflowTrackedLaunchProcess>()
     private var nextInstanceId = 1L
 
     fun launch(key: QuickLaunchKey, artifact: UnrealArtifactKey, commandLine: GeneralCommandLine) {
@@ -80,21 +82,25 @@ class QuickLaunchProcessService private constructor(
     ) {
         synchronized(lock) {
             if (!process.isProcessTerminated) {
+                val trackedProcess = WorkflowTrackedLaunchProcess(process)
                 runningProcesses[key] = TrackedLaunch(
                     info = RunningLaunchInfo(key, artifact, title, nextInstanceIdLocked()),
-                    process = WorkflowTrackedLaunchProcess(process),
+                    process = trackedProcess,
                 )
+                workflowProcesses[process] = trackedProcess
             }
         }
     }
 
     internal fun runningLaunchTerminated(key: QuickLaunchKey, process: UnrealWorkflowProcess) {
-        val tracked = synchronized(lock) {
-            runningProcesses[key]
-                ?.takeIf { it.process.identity === process }
-                ?.also { runningProcesses.remove(key) }
+        val trackedProcess = synchronized(lock) {
+            workflowProcesses.remove(process).also { terminated ->
+                if (runningProcesses[key]?.process === terminated) {
+                    runningProcesses.remove(key)
+                }
+            }
         }
-        (tracked?.process as? WorkflowTrackedLaunchProcess)?.terminated()
+        trackedProcess?.terminated()
     }
 
     fun stop(key: QuickLaunchKey) {
