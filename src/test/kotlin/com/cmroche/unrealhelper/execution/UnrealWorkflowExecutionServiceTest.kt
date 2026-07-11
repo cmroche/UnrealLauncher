@@ -142,6 +142,45 @@ class UnrealWorkflowExecutionServiceTest {
         assertEquals(listOf(currentAction, replacementAction), fixture.executor.createdActions)
     }
 
+    @Test
+    fun `launch destroy failure permanently blocks restart after later terminations`() {
+        val fixture = fixture()
+        val currentAction = Cook(clientArtifact, UnrealCookMode.FULL)
+        fixture.queue.start(plan(UnrealWorkflowRequest.COOK, currentAction))
+        val queuedProcess = fixture.executor.current.apply { startSuccessfully() }
+        val conflictingLaunch = fixture.launch(clientKey, clientArtifact).apply {
+            destroyFailure = IllegalStateException("cannot destroy launch")
+        }
+        val replacementAction = BuildBatch(setOf(clientArtifact))
+        val replacement = plan(UnrealWorkflowRequest.BUILD, replacementAction)
+
+        fixture.service.stopAndRestart(replacement, fixture.service.conflictFor(replacement)!!)
+
+        assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
+        queuedProcess.terminate(143)
+        conflictingLaunch.terminate()
+
+        assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
+        assertEquals(listOf(currentAction), fixture.executor.createdActions)
+    }
+
+    @Test
+    fun `stop and restart preserves launch that reused a key after conflict capture`() {
+        val fixture = fixture()
+        fixture.launch(clientKey, clientArtifact)
+        val replacementAction = BuildBatch(setOf(clientArtifact))
+        val replacementPlan = plan(UnrealWorkflowRequest.BUILD, replacementAction)
+        val capturedConflict = fixture.service.conflictFor(replacementPlan)!!
+
+        val newerLaunch = fixture.launch(clientKey, clientArtifact)
+
+        fixture.service.stopAndRestart(replacementPlan, capturedConflict)
+
+        assertFalse(newerLaunch.destroyed)
+        assertEquals(listOf(replacementAction), fixture.executor.createdActions)
+        assertEquals(listOf(clientKey), fixture.launchService.runningLaunches().map { it.key })
+    }
+
     private fun fixture(): Fixture {
         val executor = FakeExecutor()
         val queue = UnrealExecutionQueue(executor, { NoOpPresenter() })
@@ -224,11 +263,13 @@ class UnrealWorkflowExecutionServiceTest {
         private val listeners = mutableListOf<() -> Unit>()
         private var terminated = false
         var destroyed = false
+        var destroyFailure: RuntimeException? = null
 
         override val isProcessTerminated: Boolean get() = terminated
 
         override fun destroy() {
             destroyed = true
+            destroyFailure?.let { throw it }
         }
 
         override fun addTerminationListener(listener: () -> Unit) {

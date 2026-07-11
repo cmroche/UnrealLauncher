@@ -167,10 +167,10 @@ class QuickLaunchProcessServiceTest {
 
         service.launch(key, artifact, commandLine())
 
-        assertEquals(
-            listOf(RunningLaunchInfo(key, artifact, "Unreal Default 1: LyraClient Client Win64")),
-            service.runningLaunches(),
-        )
+        val running = service.runningLaunches().single()
+        assertEquals(key, running.key)
+        assertEquals(artifact, running.artifact)
+        assertEquals("Unreal Default 1: LyraClient Client Win64", running.title)
     }
 
     @Test
@@ -184,21 +184,62 @@ class QuickLaunchProcessServiceTest {
         service.launch(first, clientArtifact, commandLine())
         service.launch(second, clientArtifact, commandLine())
         service.launch(untouched, artifact(targetName = "LyraServer", targetType = "Server"), commandLine())
-        val callbacks = mutableListOf<String>()
+        val callbacks = mutableListOf<QuickLaunchStopResult>()
 
-        service.stopAndWait(setOf(first, second)) { callbacks += "finished" }
+        service.stopAndWait(service.runningLaunches().filter { it.key in setOf(first, second) }) { result ->
+            callbacks += result
+        }
 
         assertTrue(factory.processes[0].destroyed)
         assertTrue(factory.processes[1].destroyed)
         assertFalse(factory.processes[2].destroyed)
-        assertEquals(emptyList<String>(), callbacks)
+        assertEquals(emptyList<QuickLaunchStopResult>(), callbacks)
 
         factory.processes[0].terminate()
-        assertEquals(emptyList<String>(), callbacks)
+        assertEquals(emptyList<QuickLaunchStopResult>(), callbacks)
 
         factory.processes[1].terminate()
-        assertEquals(listOf("finished"), callbacks)
+        assertEquals(listOf(QuickLaunchStopResult.Completed), callbacks)
         assertEquals(setOf(untouched), service.runningKeys())
+    }
+
+    @Test
+    fun `stop and wait latches destroy failure despite later natural termination`() {
+        val destroyFailure = IllegalStateException("cannot destroy")
+        val process = FakeQuickLaunchProcess(destroyFailure = destroyFailure)
+        val service = QuickLaunchProcessService.createForTest(FakeQuickLaunchProcessFactory { process })
+        val key = key(targetName = "LyraClient", targetType = "Client")
+        service.launch(key, artifact(targetName = "LyraClient", targetType = "Client"), commandLine())
+        val selected = service.runningLaunches()
+        val results = mutableListOf<QuickLaunchStopResult>()
+
+        service.stopAndWait(selected, results::add)
+
+        assertEquals(listOf(QuickLaunchStopResult.Failed(destroyFailure)), results)
+
+        process.terminate()
+
+        assertEquals(listOf(QuickLaunchStopResult.Failed(destroyFailure)), results)
+    }
+
+    @Test
+    fun `stop and wait preserves newer launch that reused a captured key`() {
+        val factory = FakeQuickLaunchProcessFactory()
+        val service = QuickLaunchProcessService.createForTest(factory)
+        val key = key(targetName = "LyraClient", targetType = "Client")
+        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
+        service.launch(key, artifact, commandLine())
+        val captured = service.runningLaunches()
+
+        service.launch(key, artifact, commandLine())
+        val replacement = factory.processes.last()
+        var result: QuickLaunchStopResult? = null
+
+        service.stopAndWait(captured) { result = it }
+
+        assertEquals(QuickLaunchStopResult.Completed, result)
+        assertFalse(replacement.destroyed)
+        assertEquals(listOf(key), service.runningLaunches().map { it.key })
     }
 
     private fun key(
@@ -238,6 +279,7 @@ private class FakeQuickLaunchProcessFactory(
 
 private class FakeQuickLaunchProcess(
     private val runFailure: RuntimeException? = null,
+    private val destroyFailure: RuntimeException? = null,
 ) : QuickLaunchProcess {
     var destroyed: Boolean = false
         private set
@@ -253,6 +295,7 @@ private class FakeQuickLaunchProcess(
 
     override fun destroy() {
         destroyed = true
+        destroyFailure?.let { throw it }
     }
 
     override fun addTerminationListener(listener: () -> Unit) {

@@ -1,6 +1,7 @@
 package com.cmroche.unrealhelper.execution
 
 import com.cmroche.unrealhelper.launch.QuickLaunchProcessService
+import com.cmroche.unrealhelper.launch.QuickLaunchStopResult
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.launch.RunningLaunchInfo
 import com.cmroche.unrealhelper.workflow.Launch
@@ -40,9 +41,13 @@ class UnrealWorkflowExecutionService(
     }
 
     fun stopAndRestart(plan: UnrealExecutionPlan, conflict: UnrealWorkflowConflict) {
-        val barrier = CompletionBarrier(parties = 2) { queue.start(plan) }
-        queue.stopAndWait(barrier::arrive)
-        launchService.stopAndWait(conflict.launchedProcesses.mapTo(mutableSetOf()) { it.key }, barrier::arrive)
+        val barrier = CompletionBarrier(
+            parties = 2,
+            completed = { queue.start(plan) },
+            failed = queue::blockRestart,
+        )
+        queue.stopAndWait { barrier.arrive(QuickLaunchStopResult.Completed) }
+        launchService.stopAndWait(conflict.launchedProcesses, barrier::arrive)
     }
 
     override fun launchStarted(action: Launch, process: UnrealWorkflowProcess) {
@@ -76,22 +81,31 @@ class UnrealWorkflowExecutionService(
     private class CompletionBarrier(
         private var parties: Int,
         private val completed: () -> Unit,
+        private val failed: () -> Unit,
     ) {
         private val lock = Any()
-        private var didComplete = false
+        private var resultLatched = false
 
-        fun arrive() {
-            val shouldComplete = synchronized(lock) {
-                if (didComplete || parties == 0) return@synchronized false
-                parties--
-                if (parties == 0) {
-                    didComplete = true
-                    true
-                } else {
-                    false
+        fun arrive(result: QuickLaunchStopResult) {
+            val completion = synchronized(lock) {
+                if (resultLatched || parties == 0) return@synchronized null
+                when (result) {
+                    is QuickLaunchStopResult.Failed -> {
+                        resultLatched = true
+                        failed
+                    }
+                    QuickLaunchStopResult.Completed -> {
+                        parties--
+                        if (parties == 0) {
+                            resultLatched = true
+                            completed
+                        } else {
+                            null
+                        }
+                    }
                 }
             }
-            if (shouldComplete) completed()
+            completion?.invoke()
         }
     }
 }

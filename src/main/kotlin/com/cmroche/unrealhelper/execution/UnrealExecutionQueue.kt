@@ -82,6 +82,10 @@ class UnrealExecutionQueue(
         this.callbacks = callbacks
     }
 
+    internal fun blockRestart() = synchronized(lock) {
+        blockRestartLocked()
+    }
+
     fun stopForReplacement(plan: UnrealExecutionPlan) = synchronized(lock) {
         pendingStopCompletion = null
         pendingReplacement = plan
