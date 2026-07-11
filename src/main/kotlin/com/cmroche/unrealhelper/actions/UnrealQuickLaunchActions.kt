@@ -12,6 +12,7 @@ import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.cmroche.unrealhelper.launch.executableNameForLaunch
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
+import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -64,7 +65,7 @@ internal class UnrealLaunchAction : DumbAwareAction("Launch", "Launch selected c
 
             val processService = project.service<QuickLaunchProcessService>()
             commands.forEach { command ->
-                processService.launch(command.key, command.commandLine)
+                processService.launch(command.key, command.artifact, command.commandLine)
             }
         } catch (exception: ProcessCanceledException) {
             throw exception
@@ -120,6 +121,7 @@ internal class UnrealStopLaunchAction : DumbAwareAction("Stop", "Stop UnrealHelp
 
 internal data class UnrealQuickLaunchCommand(
     val key: QuickLaunchKey,
+    val artifact: UnrealArtifactKey,
     val commandLine: GeneralCommandLine,
 )
 
@@ -155,8 +157,16 @@ internal fun createQuickLaunchCommands(
             key = QuickLaunchKey(
                 configurationName = configuration.name,
                 entryIndex = index,
+                targetName = entry.targetName.trim(),
                 targetType = entry.targetType.trim(),
                 platform = entry.platform.trim(),
+            ),
+            artifact = UnrealArtifactKey(
+                projectPath = uprojectPath,
+                targetName = entry.targetName.trim(),
+                targetType = entry.targetType.trim(),
+                platform = entry.platform.trim(),
+                buildConfiguration = state.buildConfiguration,
             ),
             commandLine = CookedExecutableResolver.launchCommand(profile, executable, state.activeCommandLine),
         )
@@ -177,6 +187,7 @@ internal fun selectedQuickLaunchKeys(configuration: TargetPlatformConfiguration)
         QuickLaunchKey(
             configurationName = configuration.name,
             entryIndex = index,
+            targetName = entry.targetName.trim(),
             targetType = entry.targetType.trim(),
             platform = entry.platform.trim(),
         )

@@ -200,6 +200,37 @@ class UnrealExecutionQueueTest {
         assertEquals(1, fixture.executor.createdActions.size)
     }
 
+    @Test
+    fun `stop and wait clears queued work and completes only after confirmed termination`() {
+        val fixture = fixture()
+        val running = Cook(artifact, UnrealCookMode.FULL)
+        fixture.queue.start(plan(UnrealWorkflowRequest.PACKAGE, listOf(running, Stage(artifact))))
+        val process = fixture.executor.current.apply { startSuccessfully() }
+        var completed = false
+
+        fixture.queue.stopAndWait { completed = true }
+
+        assertTrue(process.destroyCalled)
+        assertEquals(emptyList<UnrealPlannedAction>(), fixture.queue.snapshot().queued)
+        assertFalse(completed)
+
+        process.terminate(143)
+
+        assertTrue(completed)
+        assertEquals(UnrealPlanState.SUCCEEDED, fixture.queue.snapshot().state)
+        assertEquals(listOf(running), fixture.executor.createdActions)
+    }
+
+    @Test
+    fun `stop and wait completes immediately when no process is active`() {
+        val fixture = fixture()
+        var completions = 0
+
+        fixture.queue.stopAndWait { completions++ }
+
+        assertEquals(1, completions)
+    }
+
     private fun fixture(): Fixture {
         val executor = FakeExecutor()
         val presenters = mutableListOf<RecordingPresenter>()

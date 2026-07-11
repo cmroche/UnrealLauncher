@@ -54,7 +54,7 @@ interface UnrealExecutionQueueCallbacks {
 class UnrealExecutionQueue(
     private val executor: UnrealPlannedActionExecutor,
     private val presenterFactory: () -> UnrealWorkflowPresenter,
-    private val callbacks: UnrealExecutionQueueCallbacks = UnrealExecutionQueueCallbacks.NONE,
+    private var callbacks: UnrealExecutionQueueCallbacks = UnrealExecutionQueueCallbacks.NONE,
 ) {
     private val lock = Any()
     private val queued = ArrayDeque<UnrealPlannedAction>()
@@ -62,6 +62,7 @@ class UnrealExecutionQueue(
     private var running: RunningAction? = null
     private var presenter: UnrealWorkflowPresenter? = null
     private var pendingReplacement: UnrealExecutionPlan? = null
+    private var pendingStopCompletion: (() -> Unit)? = null
 
     fun start(plan: UnrealExecutionPlan) = synchronized(lock) {
         check(!isActiveLocked()) { "An Unreal workflow is already active" }
@@ -76,7 +77,13 @@ class UnrealExecutionQueue(
         )
     }
 
+    internal fun setCallbacks(callbacks: UnrealExecutionQueueCallbacks) = synchronized(lock) {
+        check(!isActiveLocked()) { "Cannot replace callbacks while an Unreal workflow is active" }
+        this.callbacks = callbacks
+    }
+
     fun stopForReplacement(plan: UnrealExecutionPlan) = synchronized(lock) {
+        pendingStopCompletion = null
         pendingReplacement = plan
         queued.clear()
 
@@ -93,6 +100,28 @@ class UnrealExecutionQueue(
         } catch (_: RuntimeException) {
             blockRestartLocked()
             return@synchronized
+        }
+    }
+
+    fun stopAndWait(callback: () -> Unit) = synchronized(lock) {
+        pendingReplacement = null
+        pendingStopCompletion = callback
+        queued.clear()
+
+        val current = running
+        if (current == null) {
+            cancelCurrentPresentationLocked()
+            state = UnrealPlanState.SUCCEEDED
+            pendingStopCompletion = null
+            callback()
+            return@synchronized
+        }
+
+        state = UnrealPlanState.STOPPING
+        try {
+            current.process.destroy()
+        } catch (_: RuntimeException) {
+            blockRestartLocked()
         }
     }
 
@@ -187,7 +216,14 @@ class UnrealExecutionQueue(
                     running = null
                     presenter?.actionFinished(action, UnrealActionResult.Cancelled)
                     cancelCurrentPresentationLocked()
-                    startPendingReplacementLocked()
+                    val completion = pendingStopCompletion
+                    pendingStopCompletion = null
+                    if (completion == null) {
+                        startPendingReplacementLocked()
+                    } else {
+                        state = UnrealPlanState.SUCCEEDED
+                        completion()
+                    }
                     return@synchronized
                 }
 
@@ -225,6 +261,7 @@ class UnrealExecutionQueue(
     private fun blockRestartLocked() {
         state = UnrealPlanState.RESTART_BLOCKED
         pendingReplacement = null
+        pendingStopCompletion = null
     }
 
     private fun isActiveLocked(): Boolean =

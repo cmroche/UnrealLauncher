@@ -51,8 +51,8 @@ class UnrealQuickLaunchActionsTest {
 
         assertEquals(
             listOf(
-                QuickLaunchKey("Three Clients", 0, "Game", "Win64"),
-                QuickLaunchKey("Three Clients", 1, "Game", "Win64"),
+                QuickLaunchKey("Three Clients", 0, "", "Game", "Win64"),
+                QuickLaunchKey("Three Clients", 1, "", "Game", "Win64"),
             ),
             commands.map { it.key },
         )
@@ -131,7 +131,7 @@ class UnrealQuickLaunchActionsTest {
             resolveExecutable = { _, _, _ -> executable },
         ).single()
 
-        assertEquals(QuickLaunchKey("Default", 0, "Game", "Win64"), launch.key)
+        assertEquals(QuickLaunchKey("Default", 0, "", "Game", "Win64"), launch.key)
         assertEquals(executable.toString(), launch.commandLine.exePath)
         assertEquals(workingDirectory, launch.commandLine.workingDirectory)
         assertEquals(
@@ -157,7 +157,7 @@ class UnrealQuickLaunchActionsTest {
             resolveExecutable = { _, _, _ -> executable },
         ).single()
 
-        assertEquals(QuickLaunchKey("Default", 0, "Game", "Win64"), launch.key)
+        assertEquals(QuickLaunchKey("Default", 0, "", "Game", "Win64"), launch.key)
         assertEquals(executable.toString(), launch.commandLine.exePath)
         assertTrue(state.quickLaunchProfiles.isEmpty())
     }
@@ -217,9 +217,9 @@ class UnrealQuickLaunchActionsTest {
 
     @Test
     fun `stop selection chooses running keys from selected configuration`() {
-        val first = QuickLaunchKey("Three Clients", 0, "Game", "Win64")
-        val second = QuickLaunchKey("Three Clients", 1, "Game", "Win64")
-        val other = QuickLaunchKey("Other", 0, "Server", "Linux")
+        val first = QuickLaunchKey("Three Clients", 0, "", "Game", "Win64")
+        val second = QuickLaunchKey("Three Clients", 1, "", "Game", "Win64")
+        val other = QuickLaunchKey("Other", 0, "", "Server", "Linux")
         val configuration = TargetPlatformConfiguration(
             name = "Three Clients",
             entries = listOf(
@@ -239,9 +239,9 @@ class UnrealQuickLaunchActionsTest {
 
     @Test
     fun `stop selection falls back to all running keys when no selected pair is running`() {
-        val game = QuickLaunchKey("Game Config", 0, "Game", "Win64")
-        val client = QuickLaunchKey("Client Config", 0, "Client", "Win64")
-        val server = QuickLaunchKey("Server Config", 0, "Server", "Linux")
+        val game = QuickLaunchKey("Game Config", 0, "", "Game", "Win64")
+        val client = QuickLaunchKey("Client Config", 0, "", "Client", "Win64")
+        val server = QuickLaunchKey("Server Config", 0, "", "Server", "Linux")
 
         val selection = stopLaunchSelection(
             selectedKeys = listOf(server),
