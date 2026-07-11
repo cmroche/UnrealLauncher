@@ -1,6 +1,7 @@
 package com.cmroche.unrealhelper.config
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class TargetPlatformConfigurationsFile(
@@ -8,7 +9,7 @@ data class TargetPlatformConfigurationsFile(
     val configurations: List<TargetPlatformConfiguration> = emptyList(),
 ) {
     companion object {
-        const val CurrentVersion = 1
+        const val CurrentVersion = 2
     }
 }
 
@@ -20,19 +21,20 @@ data class TargetPlatformConfiguration(
 
 @Serializable
 data class TargetPlatformEntry(
-    val targetType: String,
+    @Transient val targetType: String = "",
     val platform: String,
     val arguments: String = "",
-    val executablePath: String = "",
-    val workingDirectory: String = "",
+    @Transient val executablePath: String = "",
+    @Transient val workingDirectory: String = "",
+    val targetName: String = "",
+    val cookOnLaunch: Boolean = false,
+    val incrementalCookOnLaunch: Boolean = false,
 ) {
     fun normalized(): TargetPlatformEntry =
         copy(
-            targetType = targetType.trim(),
             platform = platform.trim(),
             arguments = arguments.trim(),
-            executablePath = executablePath.trim(),
-            workingDirectory = workingDirectory.trim(),
+            targetName = targetName.trim(),
         )
 }
 

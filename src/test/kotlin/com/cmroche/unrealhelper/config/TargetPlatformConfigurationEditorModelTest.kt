@@ -215,8 +215,8 @@ class TargetPlatformConfigurationEditorModelTest {
 
         assertEquals(
             listOf(
-                TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-stdout"),
-                TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-FullStdOutLogOutput"),
+                TargetPlatformEntry(targetType = " Game ", platform = "Win64", arguments = "-stdout"),
+                TargetPlatformEntry(targetType = " Game ", platform = "Win64", arguments = "-FullStdOutLogOutput"),
             ),
             model.snapshot().configurations.single().entries,
         )

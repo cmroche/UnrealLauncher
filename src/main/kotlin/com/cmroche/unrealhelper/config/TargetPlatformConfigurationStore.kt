@@ -1,7 +1,11 @@
 package com.cmroche.unrealhelper.config
 
+import com.cmroche.unrealhelper.settings.UnrealTargetState
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -12,16 +16,33 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 class TargetPlatformConfigurationStore(
     private val json: Json = DefaultJson,
 ) {
-    fun load(path: Path): TargetPlatformConfigurationLoadResult {
+    fun load(
+        path: Path,
+        discoveredTargets: List<UnrealTargetState> = emptyList(),
+    ): TargetPlatformConfigurationLoadResult {
         if (!Files.exists(path)) {
             return TargetPlatformConfigurationLoadResult.Missing(path)
         }
 
         return try {
-            val decoded = json.decodeFromString(TargetPlatformConfigurationsFile.serializer(), Files.readString(path))
+            val contents = Files.readString(path)
+            val version = json.parseToJsonElement(contents).jsonObject["version"]?.jsonPrimitive?.int
+                ?: throw SerializationException("Target & Platform configuration version is missing")
+            val decoded = when (version) {
+                1 -> migrateLegacyTargetPlatformFile(
+                    json.decodeFromString(LegacyTargetPlatformConfigurationsFile.serializer(), contents),
+                    discoveredTargets,
+                )
+                TargetPlatformConfigurationsFile.CurrentVersion ->
+                    json.decodeFromString(TargetPlatformConfigurationsFile.serializer(), contents).normalized()
+                else -> return TargetPlatformConfigurationLoadResult.Malformed(
+                    path,
+                    "Unsupported Target & Platform configuration version $version",
+                )
+            }
             TargetPlatformConfigurationLoadResult.Loaded(
                 path,
-                decoded.normalized(),
+                decoded,
                 Files.getLastModifiedTime(path).toMillis(),
             )
         } catch (exception: SerializationException) {
@@ -41,7 +62,8 @@ class TargetPlatformConfigurationStore(
 
         val tempPath = Files.createTempFile(parent ?: Path.of("."), "${path.fileName}.", ".tmp")
         try {
-            Files.writeString(tempPath, json.encodeToString(TargetPlatformConfigurationsFile.serializer(), file.normalized()))
+            val current = file.normalized().copy(version = TargetPlatformConfigurationsFile.CurrentVersion)
+            Files.writeString(tempPath, json.encodeToString(TargetPlatformConfigurationsFile.serializer(), current))
             try {
                 Files.move(tempPath, path, REPLACE_EXISTING, ATOMIC_MOVE)
             } catch (_: AtomicMoveNotSupportedException) {

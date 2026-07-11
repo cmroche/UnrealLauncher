@@ -1,7 +1,9 @@
 package com.cmroche.unrealhelper.config
 
+import com.cmroche.unrealhelper.settings.UnrealTargetState
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -20,79 +22,65 @@ class TargetPlatformConfigurationStoreTest {
     }
 
     @Test
-    fun `configuration file serializes with user-visible names and entries`() {
+    fun `configuration file serializes version 2 build target entries`() {
+        val current = TargetPlatformEntry(
+            targetName = "LyraClient",
+            platform = "Win64",
+            arguments = "-windowed",
+            cookOnLaunch = true,
+            incrementalCookOnLaunch = true,
+        )
         val file = TargetPlatformConfigurationsFile(
-            configurations = listOf(
-                TargetPlatformConfiguration(
-                    name = "Client and Server",
-                    entries = listOf(
-                        TargetPlatformEntry(
-                            targetType = "Client",
-                            platform = "Win64",
-                            arguments = "-server=127.0.0.1",
-                            executablePath = "Binaries/Win64/TestClient.exe",
-                            workingDirectory = "Saved/StagedBuilds/Windows",
-                        ),
-                        TargetPlatformEntry(targetType = "Server", platform = "Win64", arguments = "/Game/Maps/TestMap"),
-                    ),
-                ),
-            ),
+            configurations = listOf(TargetPlatformConfiguration("Client", listOf(current))),
         )
 
         val encoded = json.encodeToString(TargetPlatformConfigurationsFile.serializer(), file)
         val decoded = json.decodeFromString(TargetPlatformConfigurationsFile.serializer(), encoded)
 
-        assertEquals(file, decoded)
-        assertEquals(1, decoded.version)
-        assertEquals("Client and Server", decoded.configurations.single().name)
-        assertEquals(listOf("Client", "Server"), decoded.configurations.single().entries.map { it.targetType })
-        assertEquals(listOf("Win64", "Win64"), decoded.configurations.single().entries.map { it.platform })
+        assertEquals(2, decoded.version)
+        assertEquals(current, decoded.configurations.single().entries.single())
+        assertFalse(encoded.contains("targetType"))
+        assertFalse(encoded.contains("executablePath"))
+        assertFalse(encoded.contains("workingDirectory"))
     }
 
     @Test
-    fun `configuration file decodes from the expected json shape`() {
-        val decoded = json.decodeFromString(
-            TargetPlatformConfigurationsFile.serializer(),
-            """
-            {
-              "version": 1,
-              "configurations": [
-                {
-                  "name": "Client and Server",
-                  "entries": [
-                    {
-                      "targetType": "Client",
-                      "platform": "Win64",
-                      "arguments": "-server=127.0.0.1",
-                      "executablePath": "Binaries/Win64/TestClient.exe",
-                      "workingDirectory": "Saved/StagedBuilds/Windows"
-                    }
-                  ]
-                }
-              ]
-            }
-            """.trimIndent(),
+    fun `version 1 entry migrates a single matching target and discards paths`() {
+        val result = loadLegacy(
+            targetType = " Client ",
+            targets = listOf(target(" LyraClient ", "Client")),
+        )
+
+        val entry = result.file.configurations.single().entries.single()
+        assertEquals("LyraClient", entry.targetName)
+        assertEquals("Win64", entry.platform)
+        assertEquals("-log", entry.arguments)
+        assertEquals("", entry.executablePath)
+        assertEquals("", entry.workingDirectory)
+        assertFalse(entry.cookOnLaunch)
+        assertFalse(entry.incrementalCookOnLaunch)
+    }
+
+    @Test
+    fun `version 1 entry with two matching targets migrates to blank target name`() {
+        val result = loadLegacy(
+            targetType = "Client",
+            targets = listOf(target("LyraClient", "Client"), target("ShooterClient", " Client ")),
+        )
+
+        assertEquals("", result.file.configurations.single().entries.single().targetName)
+    }
+
+    @Test
+    fun `version 1 entry with no matching target migrates to visible invalid marker`() {
+        val result = loadLegacy(
+            targetType = "Server",
+            targets = listOf(target("LyraClient", "Client")),
         )
 
         assertEquals(
-            TargetPlatformConfigurationsFile(
-                version = 1,
-                configurations = listOf(
-                    TargetPlatformConfiguration(
-                        name = "Client and Server",
-                        entries = listOf(
-                            TargetPlatformEntry(
-                                targetType = "Client",
-                                platform = "Win64",
-                                arguments = "-server=127.0.0.1",
-                                executablePath = "Binaries/Win64/TestClient.exe",
-                                workingDirectory = "Saved/StagedBuilds/Windows",
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            decoded,
+            "Missing legacy Server target",
+            result.file.configurations.single().entries.single().targetName,
         )
     }
 
@@ -107,28 +95,24 @@ class TargetPlatformConfigurationStoreTest {
     }
 
     @Test
-    fun `store loads and normalizes shared file`() {
+    fun `store loads and normalizes version 2 fields only`() {
         val path = targetPlatformConfigurationsPath()
-        Files.createDirectories(path.parent)
-        Files.writeString(
+        write(
             path,
             """
             {
-              "version": 1,
-              "configurations": [
-                {
-                  "name": " Client and Server ",
-                  "entries": [
-                    {
-                      "targetType": " Client ",
-                      "platform": " Win64 ",
-                      "arguments": " -server=127.0.0.1 ",
-                      "executablePath": " Binaries/Win64/TestClient.exe ",
-                      "workingDirectory": " Saved/StagedBuilds/Windows "
-                    }
-                  ]
-                }
-              ]
+              "version": 2,
+              "configurations": [{
+                "name": " Client ",
+                "entries": [{
+                  "targetName": " LyraClient ",
+                  "platform": " Win64 ",
+                  "arguments": " -log ",
+                  "targetType": "Client",
+                  "executablePath": "/tmp/LyraClient.exe",
+                  "workingDirectory": "/tmp"
+                }]
+              }]
             }
             """.trimIndent(),
         )
@@ -137,33 +121,33 @@ class TargetPlatformConfigurationStoreTest {
 
         assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
         result as TargetPlatformConfigurationLoadResult.Loaded
-        assertEquals(path, result.path)
+        assertEquals("Client", result.file.configurations.single().name)
         assertEquals(
-            TargetPlatformConfigurationsFile(
-                configurations = listOf(
-                    TargetPlatformConfiguration(
-                        name = "Client and Server",
-                        entries = listOf(
-                            TargetPlatformEntry(
-                                targetType = "Client",
-                                platform = "Win64",
-                                arguments = "-server=127.0.0.1",
-                                executablePath = "Binaries/Win64/TestClient.exe",
-                                workingDirectory = "Saved/StagedBuilds/Windows",
-                            ),
-                        ),
-                    ),
-                ),
+            TargetPlatformEntry(targetName = "LyraClient", platform = "Win64", arguments = "-log"),
+            result.file.configurations.single().entries.single(),
+        )
+    }
+
+    @Test
+    fun `store reports unsupported version`() {
+        val path = targetPlatformConfigurationsPath()
+        write(path, """{"version": 3, "configurations": []}""")
+
+        val result = TargetPlatformConfigurationStore().load(path)
+
+        assertEquals(
+            TargetPlatformConfigurationLoadResult.Malformed(
+                path,
+                "Unsupported Target & Platform configuration version 3",
             ),
-            result.file,
+            result,
         )
     }
 
     @Test
     fun `store reports malformed JSON with file path`() {
         val path = targetPlatformConfigurationsPath()
-        Files.createDirectories(path.parent)
-        Files.writeString(path, "{")
+        write(path, "{")
 
         val result = TargetPlatformConfigurationStore().load(path)
 
@@ -174,63 +158,82 @@ class TargetPlatformConfigurationStoreTest {
     }
 
     @Test
-    fun `store creates parent directory and writes JSON`() {
+    fun `store always saves current version and creates parent directory`() {
         val path = targetPlatformConfigurationsPath()
-        val file = configurationFile("Client and Server", "Client", "Win64")
+        val file = configurationFile("Client", "LyraClient", "Win64").copy(version = 1)
 
         TargetPlatformConfigurationStore().save(path, file)
 
         assertTrue(Files.exists(path))
-        assertEquals(".unrealhelper", path.parent.fileName.toString())
+        val encoded = Files.readString(path)
+        assertTrue(encoded.contains("\"version\": 2"))
         val result = TargetPlatformConfigurationStore().load(path)
         assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
         result as TargetPlatformConfigurationLoadResult.Loaded
-        assertEquals(file, result.file)
+        assertEquals(2, result.file.version)
     }
 
     @Test
     fun `store saves parentless path`() {
         val path = Path.of("target-platforms.json")
-        val file = configurationFile("Game Win64", "Game", "Win64")
+        val file = configurationFile("Game Win64", "MyGame", "Win64")
 
         try {
             TargetPlatformConfigurationStore().save(path, file)
-
-            val result = TargetPlatformConfigurationStore().load(path)
-            assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
-            result as TargetPlatformConfigurationLoadResult.Loaded
-            assertEquals(file, result.file)
+            assertTrue(TargetPlatformConfigurationStore().load(path) is TargetPlatformConfigurationLoadResult.Loaded)
         } finally {
             Files.deleteIfExists(path)
         }
     }
 
-    @Test
-    fun `store overwrites existing file with a loadable full file`() {
+    private fun loadLegacy(
+        targetType: String,
+        targets: List<UnrealTargetState>,
+    ): TargetPlatformConfigurationLoadResult.Loaded {
         val path = targetPlatformConfigurationsPath()
-        val store = TargetPlatformConfigurationStore()
-        store.save(path, configurationFile("Game Win64", "Game", "Win64"))
-        val replacement = configurationFile("Server Linux", "Server", "Linux")
-
-        store.save(path, replacement)
-
-        val result = store.load(path)
+        write(
+            path,
+            """
+            {
+              "version": 1,
+              "configurations": [{
+                "name": " Legacy ",
+                "entries": [{
+                  "targetType": "$targetType",
+                  "platform": " Win64 ",
+                  "arguments": " -log ",
+                  "executablePath": "/tmp/Legacy.exe",
+                  "workingDirectory": "/tmp/Legacy"
+                }]
+              }]
+            }
+            """.trimIndent(),
+        )
+        val result = TargetPlatformConfigurationStore().load(path, targets)
         assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
-        result as TargetPlatformConfigurationLoadResult.Loaded
-        assertEquals(replacement, result.file)
+        return result as TargetPlatformConfigurationLoadResult.Loaded
+    }
+
+    private fun target(name: String, type: String): UnrealTargetState =
+        UnrealTargetState().also {
+            it.name = name
+            it.type = type
+        }
+
+    private fun write(path: Path, contents: String) {
+        Files.createDirectories(path.parent)
+        Files.writeString(path, contents)
     }
 
     private fun targetPlatformConfigurationsPath(): Path =
-        temp.root.toPath()
-            .resolve(".unrealhelper")
-            .resolve("target-platforms.json")
+        temp.root.toPath().resolve(".unrealhelper").resolve("target-platforms.json")
 
-    private fun configurationFile(name: String, targetType: String, platform: String): TargetPlatformConfigurationsFile =
+    private fun configurationFile(name: String, targetName: String, platform: String): TargetPlatformConfigurationsFile =
         TargetPlatformConfigurationsFile(
             configurations = listOf(
                 TargetPlatformConfiguration(
                     name = name,
-                    entries = listOf(TargetPlatformEntry(targetType = targetType, platform = platform)),
+                    entries = listOf(TargetPlatformEntry(targetName = targetName, platform = platform)),
                 ),
             ),
         )
