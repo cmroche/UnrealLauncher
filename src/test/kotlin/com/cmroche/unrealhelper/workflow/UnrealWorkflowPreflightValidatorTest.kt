@@ -199,6 +199,60 @@ class UnrealWorkflowPreflightValidatorTest {
         )
     }
 
+    @Test
+    fun `malformed package destination is irrelevant without package phase`() {
+        listOf(
+            UnrealWorkflowRequest.BUILD,
+            UnrealWorkflowRequest.COOK,
+            UnrealWorkflowRequest.LAUNCH,
+        ).forEach { request ->
+            val fixture = fixture(cookOnLaunch = false)
+            fixture.state.packageDirectory = "bad\u0000package"
+
+            assertEquals(
+                "$request errors",
+                emptyList<String>(),
+                validator().validate(request, fixture.configuration, fixture.state, fixture.workspace.toString()),
+            )
+        }
+    }
+
+    @Test
+    fun `malformed package destination blocks package`() {
+        val fixture = fixture()
+        fixture.state.packageDirectory = "bad\u0000package"
+
+        val errors = validator().validate(
+            UnrealWorkflowRequest.PACKAGE,
+            fixture.configuration,
+            fixture.state,
+            fixture.workspace.toString(),
+        )
+
+        assertEquals(listOf("Package destination path is invalid"), errors)
+    }
+
+    @Test
+    fun `unknown build configuration and unsupported inferred target type aggregate`() {
+        val fixture = fixture()
+        fixture.state.buildConfiguration = "Profile"
+        fixture.state.discoveredTargets.single().type = "Editor"
+
+        val errors = validator().validate(
+            UnrealWorkflowRequest.BUILD,
+            fixture.configuration,
+            fixture.state,
+            fixture.workspace.toString(),
+        )
+
+        assertEquals(2, errors.size)
+        assertTrue(errors.any { it == "Build configuration 'Profile' is not supported" })
+        assertTrue(errors.any {
+            it.contains("Entry 1 LyraClient / Win64") &&
+                it.contains("target type 'Editor' is not supported; expected Game, Client, or Server")
+        })
+    }
+
     private fun validator(): UnrealWorkflowPreflightValidator = UnrealWorkflowPreflightValidator()
 
     private fun fixture(

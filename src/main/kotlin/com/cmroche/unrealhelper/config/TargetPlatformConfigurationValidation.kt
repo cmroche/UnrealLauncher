@@ -1,6 +1,7 @@
 package com.cmroche.unrealhelper.config
 
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
+import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import java.nio.file.Path
 
 data class TargetPlatformConfigurationFileValidation(
@@ -36,7 +37,12 @@ sealed interface SelectedTargetPlatformConfigurationResult {
     data object NoSelection : SelectedTargetPlatformConfigurationResult
     data class StaleSelection(val selectedName: String) : SelectedTargetPlatformConfigurationResult
     data class EmptyConfiguration(val name: String) : SelectedTargetPlatformConfigurationResult
-    data class InvalidEntries(val name: String, val messages: List<String>) : SelectedTargetPlatformConfigurationResult
+    data class InvalidEntries(
+        val configuration: TargetPlatformConfiguration,
+        val messages: List<String>,
+    ) : SelectedTargetPlatformConfigurationResult {
+        val name: String get() = configuration.name
+    }
 }
 
 fun validateConfigurationFile(file: TargetPlatformConfigurationsFile): TargetPlatformConfigurationFileValidation {
@@ -71,8 +77,12 @@ fun resolveConfigurationEntries(
         val targetName = entry.targetName.trim()
         val platform = entry.platform.trim()
         val target = discoveredTargetsByName[targetName]
+        val targetType = target?.type?.trim()
         val problems = buildList {
             if (target == null) add("build target is not discovered")
+            if (target != null && targetType !in SupportedTargetTypes) {
+                add("target type '$targetType' is not supported; expected Game, Client, or Server")
+            }
             if (platform !in discoveredPlatforms) add("platform is not discovered")
             if (entry.incrementalCookOnLaunch && !entry.cookOnLaunch) {
                 add("incremental cook requires Cook")
@@ -83,7 +93,7 @@ fun resolveConfigurationEntries(
             resolvedEntries += ResolvedTargetPlatformEntry(
                 index = index,
                 targetName = targetName,
-                targetType = requireNotNull(target).type.trim(),
+                targetType = requireNotNull(targetType),
                 platform = platform,
                 arguments = entry.arguments.trim(),
                 cookOnLaunch = entry.cookOnLaunch,
@@ -141,6 +151,8 @@ private fun resolveLoadedConfiguration(
     return if (entryResolution.isValid) {
         SelectedTargetPlatformConfigurationResult.Valid(configuration)
     } else {
-        SelectedTargetPlatformConfigurationResult.InvalidEntries(configuration.name, entryResolution.messages)
+        SelectedTargetPlatformConfigurationResult.InvalidEntries(configuration, entryResolution.messages)
     }
 }
+
+private val SupportedTargetTypes: Set<String> = UnrealTargetType.entries.map { it.name }.toSet()

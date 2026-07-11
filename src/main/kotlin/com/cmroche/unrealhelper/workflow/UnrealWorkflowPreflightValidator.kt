@@ -3,9 +3,15 @@ package com.cmroche.unrealhelper.workflow
 import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
 import com.cmroche.unrealhelper.config.resolveConfigurationEntries
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
+import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
+
+data class UnrealWorkflowPreflightResult(
+    val plan: UnrealExecutionPlan?,
+    val errors: List<String>,
+)
 
 class UnrealWorkflowPreflightValidator(
     private val plan: (
@@ -21,7 +27,14 @@ class UnrealWorkflowPreflightValidator(
         configuration: TargetPlatformConfiguration,
         state: UnrealHelperSettingsState,
         projectBasePath: String?,
-    ): List<String> {
+    ): List<String> = prepare(request, configuration, state, projectBasePath).errors
+
+    fun prepare(
+        request: UnrealWorkflowRequest,
+        configuration: TargetPlatformConfiguration,
+        state: UnrealHelperSettingsState,
+        projectBasePath: String?,
+    ): UnrealWorkflowPreflightResult {
         val errors = mutableListOf<String>()
         val entryResolution = resolveConfigurationEntries(configuration, state)
         errors += entryResolution.messages.map {
@@ -48,16 +61,33 @@ class UnrealWorkflowPreflightValidator(
             !Files.isDirectory(engineRoot) -> errors += "Engine root was not found at $engineRoot"
         }
 
-        if (!entryResolution.isValid || workspaceRoot == null) return errors
+        val buildConfigurationValid = state.buildConfiguration in UnrealHelperSettings.BuildConfigurations
+        if (!buildConfigurationValid) {
+            errors += "Build configuration '${state.buildConfiguration}' is not supported"
+        }
+        val packageDestinationValid = request != UnrealWorkflowRequest.PACKAGE || pathOrNull(
+            state.packageDirectory.ifBlank {
+                workspaceRoot?.let(UnrealHelperSettings::defaultPackageDirectory).orEmpty()
+            },
+        ) != null
+        if (!packageDestinationValid) {
+            errors += "Package destination path is invalid"
+        }
+
+        if (!entryResolution.isValid || projectPath == null || workspaceRoot == null || engineRoot == null ||
+            !buildConfigurationValid || !packageDestinationValid
+        ) {
+            return UnrealWorkflowPreflightResult(null, errors)
+        }
 
         val executionPlan = try {
             plan(request, configuration, state, projectBasePath)
         } catch (exception: IllegalArgumentException) {
             errors += "Could not create workflow plan for configuration '${configuration.name}': ${exception.message}"
-            return errors
+            return UnrealWorkflowPreflightResult(null, errors)
         } catch (exception: IllegalStateException) {
             errors += "Could not create workflow plan for configuration '${configuration.name}': ${exception.message}"
-            return errors
+            return UnrealWorkflowPreflightResult(null, errors)
         }
 
         validatePlan(executionPlan, configuration.name, errors)
@@ -96,7 +126,7 @@ class UnrealWorkflowPreflightValidator(
             errors += "Package destination was not found at ${environment.packageDirectory}"
         }
 
-        return errors
+        return UnrealWorkflowPreflightResult(executionPlan, errors)
     }
 
     private fun validatePlan(

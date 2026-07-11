@@ -5,6 +5,7 @@ import com.cmroche.unrealhelper.config.TargetPlatformEntry
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.nio.file.Path
 
@@ -163,6 +164,24 @@ class UnrealWorkflowPlannerTest {
 
         assertEquals(Path.of("/Workspace/Games/Lyra/Lyra.uproject"), artifact.projectPath)
         assertEquals("Shipping", artifact.buildConfiguration)
+    }
+
+    @Test
+    fun `unknown build configuration is rejected instead of coerced`() {
+        val state = state(target("LyraClient", "Client")).also {
+            it.buildConfiguration = "Profile"
+        }
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            planner.plan(
+                UnrealWorkflowRequest.BUILD,
+                configuration(entry("LyraClient", "Win64")),
+                state,
+                null,
+            )
+        }
+
+        assertEquals("Unsupported build configuration 'Profile'", error.message)
     }
 
     private fun configuration(vararg entries: TargetPlatformEntry) =

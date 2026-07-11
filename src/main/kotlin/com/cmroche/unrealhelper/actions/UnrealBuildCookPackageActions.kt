@@ -10,6 +10,8 @@ import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.ui.UnrealWorkflowConflictDialog
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPlanner
+import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
+import com.cmroche.unrealhelper.workflow.UnrealWorkflowPreflightResult
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPreflightValidator
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -37,19 +39,12 @@ internal abstract class UnrealWorkflowAction(
         val project = event.project ?: return
         val settings = project.service<UnrealHelperSettings>()
         val selectedConfigurationResult = project.service<TargetPlatformConfigurationService>().selectedConfigurationResult()
-        val selectedConfiguration = when (selectedConfigurationResult) {
-            is SelectedTargetPlatformConfigurationResult.Valid -> selectedConfigurationResult.configuration
-            else -> {
-                UnrealActionMessages.selectedConfigurationError(selectedConfigurationResult)
-                    ?.let { UnrealActionMessages.showError(project, it) }
-                return
-            }
+        val error = submitSelectedWorkflow(selectedConfigurationResult) { selectedConfiguration ->
+            UnrealWorkflowSubmitter(
+                execution = project.service<UnrealWorkflowExecutionService>(),
+                confirmRestart = { UnrealWorkflowConflictDialog.confirm(project, it) },
+            ).submit(request, selectedConfiguration, settings.state, project.basePath)
         }
-
-        val error = UnrealWorkflowSubmitter(
-            execution = project.service<UnrealWorkflowExecutionService>(),
-            confirmRestart = { UnrealWorkflowConflictDialog.confirm(project, it) },
-        ).submit(request, selectedConfiguration, settings.state, project.basePath)
         if (error != null) UnrealActionMessages.showError(project, error)
     }
 
@@ -58,13 +53,18 @@ internal abstract class UnrealWorkflowAction(
 
 internal class UnrealWorkflowSubmitter(
     private val execution: UnrealWorkflowExecution,
-    private val planner: UnrealWorkflowPlanner = UnrealWorkflowPlanner(),
+    private val planner: (
+        UnrealWorkflowRequest,
+        TargetPlatformConfiguration,
+        UnrealHelperSettingsState,
+        String?,
+    ) -> UnrealExecutionPlan = UnrealWorkflowPlanner()::plan,
     private val preflight: (
         UnrealWorkflowRequest,
         TargetPlatformConfiguration,
         UnrealHelperSettingsState,
         String?,
-    ) -> List<String> = UnrealWorkflowPreflightValidator(plan = planner::plan)::validate,
+    ) -> UnrealWorkflowPreflightResult = UnrealWorkflowPreflightValidator(plan = planner)::prepare,
     private val confirmRestart: (UnrealWorkflowConflict) -> Boolean = { false },
 ) {
     fun submit(
@@ -73,10 +73,12 @@ internal class UnrealWorkflowSubmitter(
         state: UnrealHelperSettingsState,
         projectBasePath: String?,
     ): String? {
-        val errors = preflight(request, configuration, state, projectBasePath)
-        UnrealActionMessages.preflightError(configuration.name, errors)?.let { return it }
-
-        val plan = planner.plan(request, configuration, state, projectBasePath)
+        val result = preflight(request, configuration, state, projectBasePath)
+        UnrealActionMessages.preflightError(configuration.name, result.errors)?.let { return it }
+        val plan = result.plan ?: return UnrealActionMessages.preflightError(
+            configuration.name,
+            listOf("Workflow plan could not be created"),
+        )
         val conflict = execution.conflictFor(plan)
         if (conflict == null) {
             execution.start(plan)
@@ -85,6 +87,15 @@ internal class UnrealWorkflowSubmitter(
         }
         return null
     }
+}
+
+internal fun submitSelectedWorkflow(
+    result: SelectedTargetPlatformConfigurationResult,
+    submit: (TargetPlatformConfiguration) -> String?,
+): String? = when (result) {
+    is SelectedTargetPlatformConfigurationResult.Valid -> submit(result.configuration)
+    is SelectedTargetPlatformConfigurationResult.InvalidEntries -> submit(result.configuration)
+    else -> UnrealActionMessages.selectedConfigurationError(result)
 }
 
 internal fun workflowActionEnabled(state: UnrealHelperSettingsState): Boolean = state.uprojectPath.isNotBlank()

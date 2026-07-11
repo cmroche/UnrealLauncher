@@ -80,20 +80,25 @@ class UnrealWorkflowPlanner {
             }
         }
 
+        val workspaceRoot = state.workspaceRoot.takeIf(String::isNotBlank)?.let(Path::of)
+            ?: projectPath.parent
+            ?: error("Workspace root is not configured")
         return UnrealExecutionPlan(
             request = request,
             configurationName = configuration.name,
             globalArguments = globalArguments,
             environment = UnrealExecutionEnvironment(
                 engineRoot = Path.of(state.engineRoot),
-                workspaceRoot = state.workspaceRoot.takeIf(String::isNotBlank)?.let(Path::of)
-                    ?: projectPath.parent
-                    ?: error("Workspace root is not configured"),
-                packageDirectory = Path.of(
-                    state.packageDirectory.ifBlank {
-                        UnrealHelperSettings.defaultPackageDirectory(state.workspaceRoot)
-                    },
-                ),
+                workspaceRoot = workspaceRoot,
+                packageDirectory = if (request == UnrealWorkflowRequest.PACKAGE) {
+                    Path.of(
+                        state.packageDirectory.ifBlank {
+                            UnrealHelperSettings.defaultPackageDirectory(workspaceRoot)
+                        },
+                    )
+                } else {
+                    workspaceRoot.resolve("Packages")
+                },
             ),
             phases = phases,
         )
@@ -148,7 +153,10 @@ class UnrealWorkflowPlanner {
         }
     }
 
-    private fun effectiveBuildConfiguration(state: UnrealHelperSettingsState): String =
-        state.buildConfiguration.takeIf { it in UnrealHelperSettings.BuildConfigurations }
-            ?: UnrealHelperSettings.DefaultBuildConfiguration
+    private fun effectiveBuildConfiguration(state: UnrealHelperSettingsState): String {
+        require(state.buildConfiguration in UnrealHelperSettings.BuildConfigurations) {
+            "Unsupported build configuration '${state.buildConfiguration}'"
+        }
+        return state.buildConfiguration
+    }
 }

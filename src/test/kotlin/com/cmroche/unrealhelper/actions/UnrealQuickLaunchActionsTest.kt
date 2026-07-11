@@ -7,6 +7,8 @@ import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
+import com.cmroche.unrealhelper.workflow.UnrealWorkflowPlanner
+import com.cmroche.unrealhelper.workflow.UnrealWorkflowPreflightResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -74,7 +76,12 @@ class UnrealQuickLaunchActionsTest {
 
     private fun submitter(execution: UnrealWorkflowExecution) = UnrealWorkflowSubmitter(
         execution = execution,
-        preflight = { _, _, _, _ -> emptyList() },
+        preflight = { request, configuration, state, basePath ->
+            UnrealWorkflowPreflightResult(
+                plan = UnrealWorkflowPlanner().plan(request, configuration, state, basePath),
+                errors = emptyList(),
+            )
+        },
     )
 
     private fun state() = UnrealHelperSettingsState().also { state ->
