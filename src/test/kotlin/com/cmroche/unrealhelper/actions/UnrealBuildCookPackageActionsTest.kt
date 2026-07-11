@@ -160,7 +160,7 @@ class UnrealBuildCookPackageActionsTest {
     }
 
     @Test
-    fun `package commands are deduplicated when configuration entries generate identical command lines`() {
+    fun `package commands preserve distinct exact targets`() {
         val settings = settings()
         settings.state.discoveredTargets = mutableListOf(
             target("MyGameEditor", "Game"),
@@ -181,8 +181,14 @@ class UnrealBuildCookPackageActionsTest {
             deduplicate = true,
         )
 
-        assertEquals(1, commands.size)
-        assertEquals("Unreal Package MyGameEditor Game Win64", commands.single().title)
+        assertEquals(2, commands.size)
+        assertEquals(
+            listOf(
+                "Unreal Package MyGameEditor Game Win64",
+                "Unreal Package MyGameClient Client Win64",
+            ),
+            commands.map { it.title },
+        )
     }
 
     @Test
