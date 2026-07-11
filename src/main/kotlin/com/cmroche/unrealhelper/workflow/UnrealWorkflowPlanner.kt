@@ -84,6 +84,17 @@ class UnrealWorkflowPlanner {
             request = request,
             configurationName = configuration.name,
             globalArguments = globalArguments,
+            environment = UnrealExecutionEnvironment(
+                engineRoot = Path.of(state.engineRoot),
+                workspaceRoot = state.workspaceRoot.takeIf(String::isNotBlank)?.let(Path::of)
+                    ?: projectPath.parent
+                    ?: error("Workspace root is not configured"),
+                packageDirectory = Path.of(
+                    state.packageDirectory.ifBlank {
+                        UnrealHelperSettings.defaultPackageDirectory(state.workspaceRoot)
+                    },
+                ),
+            ),
             phases = phases,
         )
     }

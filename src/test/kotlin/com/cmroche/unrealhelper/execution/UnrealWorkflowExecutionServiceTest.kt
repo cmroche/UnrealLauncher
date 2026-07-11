@@ -10,6 +10,7 @@ import com.cmroche.unrealhelper.workflow.Launch
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
+import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlanPhase
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
@@ -50,6 +51,21 @@ class UnrealWorkflowExecutionServiceTest {
                 plan(UnrealWorkflowRequest.BUILD, BuildBatch(setOf(editorArtifact))),
             ),
         )
+    }
+
+    @Test
+    fun `idle queue conflicts with same row launch after artifact identity changes`() {
+        val fixture = fixture()
+        fixture.launch(clientKey, clientArtifact)
+        val changedArtifact = clientArtifact.copy(
+            projectPath = Path.of("/project/Other.uproject"),
+            buildConfiguration = "Shipping",
+        )
+        val replacement = Launch(changedArtifact, "Development", 0, "", "")
+
+        val conflict = fixture.service.conflictFor(plan(UnrealWorkflowRequest.LAUNCH, replacement))
+
+        assertEquals(listOf(clientKey), conflict?.launchedProcesses?.map { it.key })
     }
 
     @Test
@@ -221,6 +237,11 @@ class UnrealWorkflowExecutionServiceTest {
             request = request,
             configurationName = "Development",
             globalArguments = "",
+            environment = UnrealExecutionEnvironment(
+                Path.of("/engine"),
+                Path.of("/project"),
+                Path.of("/packages"),
+            ),
             phases = listOf(UnrealPlanPhase(action.phase, listOf(action))),
         )
 
@@ -242,7 +263,10 @@ class UnrealWorkflowExecutionServiceTest {
         val processes = mutableListOf<FakeWorkflowProcess>()
         val current: FakeWorkflowProcess get() = processes.last()
 
-        override fun create(action: UnrealPlannedAction): UnrealWorkflowProcess =
+        override fun create(
+            action: UnrealPlannedAction,
+            environment: UnrealExecutionEnvironment,
+        ): UnrealWorkflowProcess =
             FakeWorkflowProcess().also {
                 createdActions += action
                 processes += it

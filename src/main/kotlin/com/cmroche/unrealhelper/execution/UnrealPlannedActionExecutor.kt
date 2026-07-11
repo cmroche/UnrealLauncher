@@ -6,13 +6,13 @@ import com.cmroche.unrealhelper.command.UnrealCommandContext
 import com.cmroche.unrealhelper.launch.ResolvedLaunchArtifact
 import com.cmroche.unrealhelper.launch.UnrealLaunchCommandBuilder
 import com.cmroche.unrealhelper.launch.UnrealTargetReceiptResolver
-import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.workflow.BuildBatch
 import com.cmroche.unrealhelper.workflow.Cook
 import com.cmroche.unrealhelper.workflow.Launch
 import com.cmroche.unrealhelper.workflow.Package
 import com.cmroche.unrealhelper.workflow.Stage
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
+import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.project.Project
@@ -25,52 +25,46 @@ internal interface UnrealPlannedActionProcessFactory {
 }
 
 internal class RiderUnrealPlannedActionExecutor(
-    private val settings: UnrealHelperSettings,
     private val processFactory: UnrealPlannedActionProcessFactory,
     private val receiptResolver: (UnrealArtifactKey, Path, Path) -> ResolvedLaunchArtifact =
         UnrealTargetReceiptResolver::resolve,
 ) : UnrealPlannedActionExecutor {
-    constructor(project: Project, settings: UnrealHelperSettings) : this(
-        settings = settings,
+    constructor(project: Project) : this(
         processFactory = RiderUnrealPlannedActionProcessFactory(project),
     )
 
-    override fun create(action: UnrealPlannedAction): UnrealWorkflowProcess = when (action) {
+    override fun create(
+        action: UnrealPlannedAction,
+        environment: UnrealExecutionEnvironment,
+    ): UnrealWorkflowProcess = when (action) {
         is BuildBatch -> processFactory.create(
-            UnrealCommandBuilder.buildBatch(action.artifacts.map(::context)),
+            UnrealCommandBuilder.buildBatch(action.artifacts.map { context(it, environment) }),
         )
-        is Cook -> processFactory.create(UnrealCommandBuilder.cook(context(action.artifact), action.mode))
-        is Stage -> processFactory.create(UnrealCommandBuilder.stage(context(action.artifact)))
-        is Package -> processFactory.create(UnrealCommandBuilder.packageProject(context(action.artifact)))
-        is Launch -> createLaunch(action)
+        is Cook -> processFactory.create(UnrealCommandBuilder.cook(context(action.artifact, environment), action.mode))
+        is Stage -> processFactory.create(UnrealCommandBuilder.stage(context(action.artifact, environment)))
+        is Package -> processFactory.create(UnrealCommandBuilder.packageProject(context(action.artifact, environment)))
+        is Launch -> createLaunch(action, environment)
     }
 
-    private fun createLaunch(action: Launch): UnrealWorkflowProcess {
-        val state = settings.state
+    private fun createLaunch(action: Launch, environment: UnrealExecutionEnvironment): UnrealWorkflowProcess {
         val projectRoot = action.artifact.projectPath.parent
-            ?: state.workspaceRoot.takeIf { it.isNotBlank() }?.let(Path::of)
-            ?: error("Project root is not configured")
-        val engineRoot = state.engineRoot.takeIf { it.isNotBlank() }?.let(Path::of)
-            ?: error("Engine root is not configured")
-        val artifact = receiptResolver(action.artifact, projectRoot, engineRoot)
+            ?: environment.workspaceRoot
+        val artifact = receiptResolver(action.artifact, projectRoot, environment.engineRoot)
         return processFactory.createLaunch(
             UnrealLaunchCommandBuilder.build(action, artifact),
             launchTitle(action),
         )
     }
 
-    private fun context(artifact: UnrealArtifactKey): UnrealCommandContext {
-        val state = settings.state
-        val workspaceRoot = state.workspaceRoot.takeIf { it.isNotBlank() }?.let(Path::of)
-            ?: artifact.projectPath.parent
-            ?: error("Workspace root is not configured")
-        val engineRoot = state.engineRoot.takeIf { it.isNotBlank() }?.let(Path::of)
-            ?: error("Engine root is not configured")
+    private fun context(
+        artifact: UnrealArtifactKey,
+        environment: UnrealExecutionEnvironment,
+    ): UnrealCommandContext {
         return UnrealCommandContext(
             artifact = artifact,
-            engineRoot = engineRoot,
-            workspaceRoot = workspaceRoot,
-            packageDirectory = Path.of(settings.effectivePackageDirectory()),
+            engineRoot = environment.engineRoot,
+            workspaceRoot = environment.workspaceRoot,
+            packageDirectory = environment.packageDirectory,
         )
     }
 

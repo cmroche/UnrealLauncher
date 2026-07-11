@@ -4,7 +4,6 @@ import com.cmroche.unrealhelper.launch.QuickLaunchProcessService
 import com.cmroche.unrealhelper.launch.QuickLaunchStopResult
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.launch.RunningLaunchInfo
-import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.workflow.Launch
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.intellij.execution.process.ProcessOutputType
@@ -33,7 +32,7 @@ class UnrealWorkflowExecutionService private constructor(
 ) : UnrealExecutionQueueCallbacks, UnrealWorkflowExecution {
     constructor(project: Project) : this(
         queue = UnrealExecutionQueue(
-            executor = RiderUnrealPlannedActionExecutor(project, project.service<UnrealHelperSettings>()),
+            executor = RiderUnrealPlannedActionExecutor(project),
             presenterFactory = { UnrealWorkflowPresenter.create(project) },
         ),
         launchService = project.service<QuickLaunchProcessService>(),
@@ -48,7 +47,13 @@ class UnrealWorkflowExecutionService private constructor(
         val planArtifacts = plan.phases
             .flatMap { it.actions }
             .flatMapTo(mutableSetOf()) { it.artifacts }
-        val conflictingLaunches = launchService.runningLaunches().filter { it.artifact in planArtifacts }
+        val planLaunchKeys = plan.phases
+            .flatMap { it.actions }
+            .filterIsInstance<Launch>()
+            .mapTo(mutableSetOf()) { it.quickLaunchKey() }
+        val conflictingLaunches = launchService.runningLaunches().filter {
+            it.artifact in planArtifacts || it.key in planLaunchKeys
+        }
 
         return UnrealWorkflowConflict(
             runningActions = snapshot.runningNames,
@@ -84,7 +89,7 @@ class UnrealWorkflowExecutionService private constructor(
     ) = Unit
 
     override fun launchTerminated(action: Launch, process: UnrealWorkflowProcess, exitCode: Int) {
-        launchService.runningLaunchTerminated(action.quickLaunchKey(), process)
+        launchService.runningLaunchTerminated(process)
     }
 
     private fun Launch.quickLaunchKey(): QuickLaunchKey =

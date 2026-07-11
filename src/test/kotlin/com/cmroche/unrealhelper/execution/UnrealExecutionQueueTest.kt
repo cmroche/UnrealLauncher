@@ -8,6 +8,7 @@ import com.cmroche.unrealhelper.workflow.Stage
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
+import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlanPhase
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
@@ -248,6 +249,11 @@ class UnrealExecutionQueueTest {
             request = request,
             configurationName = "Development",
             globalArguments = "",
+            environment = UnrealExecutionEnvironment(
+                Path.of("/engine"),
+                Path.of("/project"),
+                Path.of("/packages"),
+            ),
             phases = actions.groupBy { it.phase }.map { (phase, phaseActions) -> UnrealPlanPhase(phase, phaseActions) },
         )
 
@@ -265,7 +271,10 @@ class UnrealExecutionQueueTest {
         private val processes = mutableListOf<FakeProcess>()
         val current: FakeProcess get() = processes.last()
 
-        override fun create(action: UnrealPlannedAction): UnrealWorkflowProcess =
+        override fun create(
+            action: UnrealPlannedAction,
+            environment: UnrealExecutionEnvironment,
+        ): UnrealWorkflowProcess =
             FakeProcess().also {
                 createdActions += action
                 processes += it

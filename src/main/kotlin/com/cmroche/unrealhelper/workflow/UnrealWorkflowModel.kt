@@ -71,9 +71,16 @@ data class UnrealPlanPhase(
     }
 }
 
+data class UnrealExecutionEnvironment(
+    val engineRoot: Path,
+    val workspaceRoot: Path,
+    val packageDirectory: Path,
+)
+
 data class UnrealExecutionPlan(
     val request: UnrealWorkflowRequest,
     val configurationName: String,
     val globalArguments: String,
+    val environment: UnrealExecutionEnvironment,
     val phases: List<UnrealPlanPhase>,
 )

@@ -12,6 +12,27 @@ import java.nio.file.Path
 
 class QuickLaunchProcessServiceTest {
     @Test
+    fun `same row workflow launches remain independently visible and stoppable`() {
+        val service = QuickLaunchProcessService.createForTest(FakeQuickLaunchProcessFactory())
+        val key = key(targetName = "LyraClient", targetType = "Client")
+        val first = TestWorkflowProcess()
+        val second = TestWorkflowProcess()
+
+        service.registerRunningLaunch(key, artifact("LyraClient", "Client"), "first", first)
+        service.registerRunningLaunch(key, artifact("LyraClient", "Client"), "second", second)
+
+        val running = service.runningLaunches()
+        assertEquals(2, running.size)
+        service.stop(key)
+        assertTrue(first.destroyed)
+        assertTrue(second.destroyed)
+
+        service.runningLaunchTerminated(first)
+
+        assertEquals(listOf("second"), service.runningLaunches().map { it.title })
+    }
+
+    @Test
     fun `launch tracks key and executor title`() {
         val factory = FakeQuickLaunchProcessFactory()
         val service = QuickLaunchProcessService.createForTest(factory)
@@ -263,6 +284,18 @@ class QuickLaunchProcessServiceTest {
 
     private fun commandLine(): GeneralCommandLine =
         GeneralCommandLine("/tmp/MyGame")
+}
+
+private class TestWorkflowProcess : com.cmroche.unrealhelper.execution.UnrealWorkflowProcess {
+    override val isProcessTerminating: Boolean = false
+    override val isProcessTerminated: Boolean = false
+    var destroyed = false
+
+    override fun start(listener: com.cmroche.unrealhelper.execution.UnrealWorkflowProcessListener) = Unit
+
+    override fun destroy() {
+        destroyed = true
+    }
 }
 
 private class FakeQuickLaunchProcessFactory(

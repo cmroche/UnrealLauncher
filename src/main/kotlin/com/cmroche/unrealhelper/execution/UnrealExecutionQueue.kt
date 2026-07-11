@@ -7,6 +7,7 @@ import com.cmroche.unrealhelper.workflow.Package
 import com.cmroche.unrealhelper.workflow.Stage
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
+import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.intellij.execution.process.ProcessOutputType
 import java.util.ArrayDeque
@@ -31,7 +32,7 @@ data class UnrealExecutionQueueSnapshot(
 }
 
 fun interface UnrealPlannedActionExecutor {
-    fun create(action: UnrealPlannedAction): UnrealWorkflowProcess
+    fun create(action: UnrealPlannedAction, environment: UnrealExecutionEnvironment): UnrealWorkflowProcess
 }
 
 interface UnrealExecutionQueueCallbacks {
@@ -57,7 +58,7 @@ class UnrealExecutionQueue(
     private var callbacks: UnrealExecutionQueueCallbacks = UnrealExecutionQueueCallbacks.NONE,
 ) {
     private val lock = Any()
-    private val queued = ArrayDeque<UnrealPlannedAction>()
+    private val queued = ArrayDeque<QueuedAction>()
     private var state = UnrealPlanState.IDLE
     private var running: RunningAction? = null
     private var presenter: UnrealWorkflowPresenter? = null
@@ -73,7 +74,7 @@ class UnrealExecutionQueue(
         UnrealExecutionQueueSnapshot(
             state = state,
             running = running?.action,
-            queued = queued.toList(),
+            queued = queued.map { it.action },
         )
     }
 
@@ -133,7 +134,9 @@ class UnrealExecutionQueue(
         val newPresenter = presenterFactory()
         presenter = newPresenter
         queued.clear()
-        plan.phases.forEach { queued.addAll(it.actions) }
+        plan.phases.forEach { phase ->
+            queued.addAll(phase.actions.map { QueuedAction(it, plan.environment) })
+        }
         pendingReplacement = null
         state = UnrealPlanState.RUNNING
         newPresenter.start(plan)
@@ -142,17 +145,18 @@ class UnrealExecutionQueue(
 
     private fun startNextLocked() {
         if (state != UnrealPlanState.RUNNING || running != null) return
-        val action = queued.pollFirst()
-        if (action == null) {
+        val queuedAction = queued.pollFirst()
+        if (queuedAction == null) {
             state = UnrealPlanState.SUCCEEDED
             presenter?.finish(UnrealPlanResult.Success)
             presenter = null
             return
         }
+        val action = queuedAction.action
 
         presenter?.actionStarted(action)
         val process = try {
-            executor.create(action)
+            executor.create(action, queuedAction.environment)
         } catch (_: RuntimeException) {
             failLocked(action, PROCESS_START_FAILURE)
             return
@@ -278,6 +282,11 @@ class UnrealExecutionQueue(
         val process: UnrealWorkflowProcess,
         var started: Boolean = false,
         var handedOff: Boolean = false,
+    )
+
+    private data class QueuedAction(
+        val action: UnrealPlannedAction,
+        val environment: UnrealExecutionEnvironment,
     )
 
     private companion object {

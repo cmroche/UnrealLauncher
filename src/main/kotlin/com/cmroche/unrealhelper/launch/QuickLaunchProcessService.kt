@@ -44,34 +44,47 @@ class QuickLaunchProcessService private constructor(
     constructor(project: Project) : this(RiderQuickLaunchProcessFactory(project))
 
     private val lock = Any()
-    private val runningProcesses = mutableMapOf<QuickLaunchKey, TrackedLaunch>()
-    private val workflowProcesses = IdentityHashMap<UnrealWorkflowProcess, WorkflowTrackedLaunchProcess>()
+    private val runningProcesses = mutableMapOf<QuickLaunchInstanceId, TrackedLaunch>()
+    private val workflowProcesses = IdentityHashMap<UnrealWorkflowProcess, QuickLaunchInstanceId>()
     private var nextInstanceId = 1L
 
     fun launch(key: QuickLaunchKey, artifact: UnrealArtifactKey, commandLine: GeneralCommandLine) {
-        stop(key)
+        replaceDirectLaunch(key)
 
         val title = title(key)
         val process = processFactory.create(commandLine, title)
+        val instanceId = synchronized(lock) { nextInstanceIdLocked() }
         process.addTerminationListener {
-            removeIfCurrent(key, process)
+            remove(instanceId, process)
         }
 
         try {
             process.run()
             synchronized(lock) {
                 if (!process.isProcessTerminated) {
-                    runningProcesses[key] = TrackedLaunch(
-                        info = RunningLaunchInfo(key, artifact, title, nextInstanceIdLocked()),
+                    runningProcesses[instanceId] = TrackedLaunch(
+                        info = RunningLaunchInfo(key, artifact, title, instanceId),
                         process = process,
                     )
                 }
             }
         } catch (throwable: Throwable) {
-            removeIfCurrent(key, process)
+            remove(instanceId, process)
             process.destroy()
             throw throwable
         }
+    }
+
+    private fun replaceDirectLaunch(key: QuickLaunchKey) {
+        val replaced = synchronized(lock) {
+            runningProcesses
+                .filterValues { it.info.key == key && it.process is QuickLaunchProcess }
+                .toMap()
+                .also { launches -> launches.keys.forEach(runningProcesses::remove) }
+                .values
+                .map { it.process }
+        }
+        replaced.forEach { it.destroy() }
     }
 
     internal fun registerRunningLaunch(
@@ -83,31 +96,29 @@ class QuickLaunchProcessService private constructor(
         synchronized(lock) {
             if (!process.isProcessTerminated) {
                 val trackedProcess = WorkflowTrackedLaunchProcess(process)
-                runningProcesses[key] = TrackedLaunch(
-                    info = RunningLaunchInfo(key, artifact, title, nextInstanceIdLocked()),
+                val instanceId = nextInstanceIdLocked()
+                runningProcesses[instanceId] = TrackedLaunch(
+                    info = RunningLaunchInfo(key, artifact, title, instanceId),
                     process = trackedProcess,
                 )
-                workflowProcesses[process] = trackedProcess
+                workflowProcesses[process] = instanceId
             }
         }
     }
 
-    internal fun runningLaunchTerminated(key: QuickLaunchKey, process: UnrealWorkflowProcess) {
+    internal fun runningLaunchTerminated(process: UnrealWorkflowProcess) {
         val trackedProcess = synchronized(lock) {
-            workflowProcesses.remove(process).also { terminated ->
-                if (runningProcesses[key]?.process === terminated) {
-                    runningProcesses.remove(key)
-                }
-            }
+            val instanceId = workflowProcesses.remove(process) ?: return@synchronized null
+            runningProcesses.remove(instanceId)?.process as? WorkflowTrackedLaunchProcess
         }
         trackedProcess?.terminated()
     }
 
     fun stop(key: QuickLaunchKey) {
-        val process = synchronized(lock) {
-            runningProcesses[key]?.process
+        val processes = synchronized(lock) {
+            runningProcesses.values.filter { it.info.key == key }.map { it.process }
         }
-        process?.destroy()
+        processes.forEach { it.destroy() }
     }
 
     fun stopAndWait(
@@ -116,8 +127,8 @@ class QuickLaunchProcessService private constructor(
     ) {
         val processes = synchronized(lock) {
             launches.mapNotNull { selected ->
-                runningProcesses[selected.key]
-                    ?.takeIf { it.info.instanceId == selected.instanceId }
+                runningProcesses[selected.instanceId]
+                    ?.takeIf { it.info.key == selected.key }
                     ?.process
             }.distinct()
         }
@@ -185,14 +196,15 @@ class QuickLaunchProcessService private constructor(
 
     fun isRunning(key: QuickLaunchKey): Boolean =
         synchronized(lock) {
-            runningProcesses[key]?.process?.isProcessTerminated == false
+            runningProcesses.values.any { it.info.key == key && !it.process.isProcessTerminated }
         }
 
     fun runningKeys(): Set<QuickLaunchKey> =
         synchronized(lock) {
             runningProcesses
-                .filterValues { !it.process.isProcessTerminated }
-                .keys
+                .values
+                .filter { !it.process.isProcessTerminated }
+                .map { it.info.key }
                 .toSet()
         }
 
@@ -202,10 +214,10 @@ class QuickLaunchProcessService private constructor(
         }
     }
 
-    private fun removeIfCurrent(key: QuickLaunchKey, process: TrackedLaunchProcess) {
+    private fun remove(instanceId: QuickLaunchInstanceId, process: TrackedLaunchProcess) {
         synchronized(lock) {
-            if (runningProcesses[key]?.process === process) {
-                runningProcesses.remove(key)
+            if (runningProcesses[instanceId]?.process === process) {
+                runningProcesses.remove(instanceId)
             }
         }
     }
