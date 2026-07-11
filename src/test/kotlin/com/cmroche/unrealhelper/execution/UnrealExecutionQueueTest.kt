@@ -59,7 +59,39 @@ class UnrealExecutionQueueTest {
         assertEquals(UnrealPlanState.FAILED, snapshot.state)
         assertEquals(emptyList<UnrealPlannedAction>(), snapshot.queued)
         assertEquals(listOf(cook), fixture.executor.createdActions)
-        assertEquals(UnrealPlanResult.Failure(cook, 7), fixture.presenters.single().finished.single())
+        assertEquals(
+            UnrealPlanResult.Failure(cook, 7, cancelledActions = listOf(launch)),
+            fixture.presenters.single().finished.single(),
+        )
+        assertEquals(listOf(launch to UnrealActionResult.Cancelled), fixture.presenters.single().actionFinishes.filter { it.second == UnrealActionResult.Cancelled })
+    }
+
+    @Test
+    fun `process creation failure preserves exception and action metadata and cancels waiting actions`() {
+        val cook = Cook(artifact, UnrealCookMode.FULL)
+        val launch = launch(0)
+        val fixture = fixture()
+        fixture.executor.createFailure = IllegalStateException("receipt missing from /project/Binaries/Win64")
+
+        fixture.queue.start(plan(UnrealWorkflowRequest.LAUNCH, listOf(cook, launch)))
+
+        val result = fixture.presenters.single().finished.single() as UnrealPlanResult.Failure
+        assertTrue(result.detail.orEmpty().contains("receipt missing"))
+        assertTrue(result.detail.orEmpty().contains("Cook LyraClient [Client, Win64, Development]"))
+        assertEquals(listOf(launch), result.cancelledActions)
+        assertTrue(fixture.presenters.single().outputs.single().second.contains("receipt missing"))
+    }
+
+    @Test
+    fun `presenter receives the immutable plan as queued nodes before the first action starts`() {
+        val build = BuildBatch(setOf(artifact))
+        val cook = Cook(artifact, UnrealCookMode.FULL)
+        val fixture = fixture()
+
+        fixture.queue.start(plan(UnrealWorkflowRequest.LAUNCH, listOf(build, cook)))
+
+        assertEquals(listOf(build, cook), fixture.presenters.single().queuedActions)
+        assertEquals(listOf(build), fixture.presenters.single().startedActions)
     }
 
     @Test
@@ -186,6 +218,29 @@ class UnrealExecutionQueueTest {
 
         assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
         assertEquals(1, fixture.executor.createdActions.size)
+        assertTrue(fixture.callbacks.restartFailures.single().contains("cannot destroy"))
+
+        fixture.executor.current.terminate(143)
+        assertEquals(UnrealPlanState.FAILED, fixture.queue.snapshot().state)
+        fixture.queue.start(plan(UnrealWorkflowRequest.BUILD, listOf(BuildBatch(setOf(artifact)))))
+        assertEquals(2, fixture.executor.createdActions.size)
+    }
+
+    @Test
+    fun `replacement timeout drops replacement and later termination becomes retryable`() {
+        val timeouts = RecordingTimeoutScheduler()
+        val fixture = fixture(timeouts)
+        fixture.queue.start(plan(UnrealWorkflowRequest.COOK, listOf(Cook(artifact, UnrealCookMode.FULL))))
+        val process = fixture.executor.current.apply { startSuccessfully() }
+        fixture.queue.stopForReplacement(plan(UnrealWorkflowRequest.BUILD, listOf(BuildBatch(setOf(artifact)))))
+
+        timeouts.fire()
+        assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
+        assertTrue(fixture.callbacks.restartFailures.single().contains("Timed out"))
+        assertEquals(1, fixture.executor.createdActions.size)
+
+        process.terminate(143)
+        assertEquals(UnrealPlanState.FAILED, fixture.queue.snapshot().state)
     }
 
     @Test
@@ -232,7 +287,7 @@ class UnrealExecutionQueueTest {
         assertEquals(1, completions)
     }
 
-    private fun fixture(): Fixture {
+    private fun fixture(timeoutScheduler: UnrealRestartTimeoutScheduler = UnrealRestartTimeoutScheduler.NONE): Fixture {
         val executor = FakeExecutor()
         val presenters = mutableListOf<RecordingPresenter>()
         val callbacks = RecordingCallbacks()
@@ -240,6 +295,7 @@ class UnrealExecutionQueueTest {
             executor = executor,
             presenterFactory = { RecordingPresenter().also(presenters::add) },
             callbacks = callbacks,
+            timeoutScheduler = timeoutScheduler,
         )
         return Fixture(queue, executor, presenters, callbacks)
     }
@@ -270,15 +326,18 @@ class UnrealExecutionQueueTest {
         val createdActions = mutableListOf<UnrealPlannedAction>()
         private val processes = mutableListOf<FakeProcess>()
         val current: FakeProcess get() = processes.last()
+        var createFailure: RuntimeException? = null
 
         override fun create(
             action: UnrealPlannedAction,
             environment: UnrealExecutionEnvironment,
-        ): UnrealWorkflowProcess =
-            FakeProcess().also {
+        ): UnrealWorkflowProcess {
+            createFailure?.let { throw it }
+            return FakeProcess().also {
                 createdActions += action
                 processes += it
             }
+        }
 
         fun process(index: Int): FakeProcess = processes[index]
     }
@@ -312,11 +371,16 @@ class UnrealExecutionQueueTest {
 
     private class RecordingPresenter : UnrealWorkflowPresenter {
         val finished = mutableListOf<UnrealPlanResult>()
+        val queuedActions = mutableListOf<UnrealPlannedAction>()
+        val startedActions = mutableListOf<UnrealPlannedAction>()
+        val actionFinishes = mutableListOf<Pair<UnrealPlannedAction, UnrealActionResult>>()
+        val outputs = mutableListOf<Pair<UnrealPlannedAction, String>>()
 
         override fun start(plan: UnrealExecutionPlan) = Unit
-        override fun actionStarted(action: UnrealPlannedAction) = Unit
-        override fun output(action: UnrealPlannedAction, text: String, type: ProcessOutputType) = Unit
-        override fun actionFinished(action: UnrealPlannedAction, result: UnrealActionResult) = Unit
+        override fun actionQueued(action: UnrealPlannedAction) { queuedActions += action }
+        override fun actionStarted(action: UnrealPlannedAction) { startedActions += action }
+        override fun output(action: UnrealPlannedAction, text: String, type: ProcessOutputType) { outputs += action to text }
+        override fun actionFinished(action: UnrealPlannedAction, result: UnrealActionResult) { actionFinishes += action to result }
         override fun finish(result: UnrealPlanResult) {
             finished += result
         }
@@ -325,6 +389,7 @@ class UnrealExecutionQueueTest {
     private class RecordingCallbacks : UnrealExecutionQueueCallbacks {
         val startedActions = mutableListOf<Launch>()
         val terminatedActions = mutableListOf<Pair<Launch, Int>>()
+        val restartFailures = mutableListOf<String>()
 
         override fun launchStarted(action: Launch, process: UnrealWorkflowProcess) {
             startedActions += action
@@ -333,6 +398,14 @@ class UnrealExecutionQueueTest {
         override fun launchTerminated(action: Launch, process: UnrealWorkflowProcess, exitCode: Int) {
             terminatedActions += action to exitCode
         }
+
+        override fun restartFailed(message: String) { restartFailures += message }
+    }
+
+    private class RecordingTimeoutScheduler : UnrealRestartTimeoutScheduler {
+        private val tasks = mutableListOf<() -> Unit>()
+        override fun schedule(task: () -> Unit) { tasks += task }
+        fun fire() { tasks.removeFirst().invoke() }
     }
 
     companion object {

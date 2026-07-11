@@ -11,6 +11,7 @@ internal object UnrealLaunchCommandBuilder {
         if (artifact.executable.startsWith(artifact.engineRoot.resolve("Engine")) && artifact.projectPath != null) {
             command.addParameter(artifact.projectPath.toString())
         }
+        action.cookedSandbox?.let { command.addParameter("-sandbox=$it") }
         command.parametersList.addAll(parse(action.entryArguments) + parse(action.globalArguments))
         return command
     }

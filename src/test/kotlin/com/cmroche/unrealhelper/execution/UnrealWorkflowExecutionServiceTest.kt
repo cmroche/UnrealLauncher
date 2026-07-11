@@ -180,7 +180,7 @@ class UnrealWorkflowExecutionServiceTest {
     }
 
     @Test
-    fun `launch destroy failure permanently blocks restart after later terminations`() {
+    fun `launch destroy failure drops replacement then becomes retryable after exact termination`() {
         val fixture = fixture()
         val currentAction = Cook(clientArtifact, UnrealCookMode.FULL)
         fixture.queue.start(plan(UnrealWorkflowRequest.COOK, currentAction))
@@ -197,8 +197,11 @@ class UnrealWorkflowExecutionServiceTest {
         queuedProcess.terminate(143)
         conflictingLaunch.terminate()
 
-        assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
+        assertEquals(UnrealPlanState.FAILED, fixture.queue.snapshot().state)
         assertEquals(listOf(currentAction), fixture.executor.createdActions)
+
+        fixture.service.start(replacement)
+        assertEquals(listOf(currentAction, replacementAction), fixture.executor.createdActions)
     }
 
     @Test

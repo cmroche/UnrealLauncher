@@ -14,6 +14,7 @@ import com.cmroche.unrealhelper.workflow.Stage
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
+import com.cmroche.unrealhelper.workflow.artifactDirectoryName
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.project.Project
 import java.nio.file.Path
@@ -40,9 +41,21 @@ internal class RiderUnrealPlannedActionExecutor(
         is BuildBatch -> processFactory.create(
             UnrealCommandBuilder.buildBatch(action.artifacts.map { context(it, environment) }),
         )
-        is Cook -> processFactory.create(UnrealCommandBuilder.cook(context(action.artifact, environment), action.mode))
-        is Stage -> processFactory.create(UnrealCommandBuilder.stage(context(action.artifact, environment)))
-        is Package -> processFactory.create(UnrealCommandBuilder.packageProject(context(action.artifact, environment)))
+        is Cook -> processFactory.create(
+            UnrealCommandBuilder.cook(context(action.artifact, environment), action.mode, action.outputDirectory),
+        )
+        is Stage -> processFactory.create(
+            UnrealCommandBuilder.stage(
+                context(action.artifact, environment), action.cookOutputDirectory, action.stagingDirectory,
+            ),
+        )
+        is Package -> processFactory.create(
+            UnrealCommandBuilder.packageProject(
+                context(action.artifact, environment), action.cookOutputDirectory,
+                action.stagingDirectory,
+                action.archiveDirectory ?: environment.packageDirectory.resolve(artifactDirectoryName(action.artifact)),
+            ),
+        )
         is Launch -> createLaunch(action, environment)
     }
 

@@ -6,6 +6,7 @@ import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Path
 
@@ -104,6 +105,45 @@ class UnrealWorkflowPlannerTest {
         )
 
         assertEquals(UnrealCookMode.FULL, plan.actions<Cook>().single().mode)
+    }
+
+    @Test
+    fun `cooked launches share an exact artifact sandbox while uncooked launches do not`() {
+        val plan = planner.plan(
+            UnrealWorkflowRequest.LAUNCH,
+            configuration(
+                entry("LyraClient", "Win64", cookOnLaunch = true),
+                entry("LyraClient", "Win64", cookOnLaunch = true, incrementalCookOnLaunch = true),
+                entry("LyraServer", "Win64"),
+            ),
+            state(target("LyraClient", "Client"), target("LyraServer", "Server")),
+            null,
+        )
+
+        val cook = plan.actions<Cook>().single()
+        assertEquals(cook.outputDirectory, plan.actions<Launch>()[0].cookedSandbox)
+        assertEquals(cook.outputDirectory, plan.actions<Launch>()[1].cookedSandbox)
+        assertEquals(null, plan.actions<Launch>()[2].cookedSandbox)
+        assertTrue(cook.outputDirectory.toString().contains("LyraClient-Client-Win64-Shipping"))
+        assertTrue(cook.outputDirectory.endsWith("WindowsClient"))
+    }
+
+    @Test
+    fun `package actions isolate cook stage and archive paths per exact target`() {
+        val plan = planner.plan(
+            UnrealWorkflowRequest.PACKAGE,
+            configuration(entry("LyraClient", "Win64"), entry("ShooterClient", "Win64")),
+            state(target("LyraClient", "Client"), target("ShooterClient", "Client")),
+            null,
+        )
+
+        val cooks = plan.actions<Cook>()
+        val stages = plan.actions<Stage>()
+        val packages = plan.actions<Package>()
+        assertEquals(2, cooks.map { it.outputDirectory }.distinct().size)
+        assertEquals(2, stages.map { it.stagingDirectory }.distinct().size)
+        assertEquals(2, packages.map { it.archiveDirectory }.distinct().size)
+        assertEquals(stages.map { it.stagingDirectory }, packages.map { it.stagingDirectory })
     }
 
     @Test

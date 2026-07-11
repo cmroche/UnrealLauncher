@@ -42,8 +42,13 @@ class UnrealWorkflowPlanner {
             UnrealWorkflowRequest.PACKAGE -> buildList {
                 addBuild(artifacts)
                 addPhase(UnrealPhase.COOK, fullCooks(artifacts))
-                addPhase(UnrealPhase.STAGE, artifacts.map(::Stage))
-                addPhase(UnrealPhase.PACKAGE, artifacts.map(::Package))
+                addPhase(UnrealPhase.STAGE, artifacts.map { Stage(it) })
+                val packageRoot = Path.of(state.packageDirectory.ifBlank {
+                    UnrealHelperSettings.defaultPackageDirectory(workspaceRoot(state, projectPath))
+                })
+                addPhase(UnrealPhase.PACKAGE, artifacts.map {
+                    Package(it, archiveDirectory = packageRoot.resolve(artifactDirectoryName(it)))
+                })
             }
 
             UnrealWorkflowRequest.LAUNCH -> buildList {
@@ -74,15 +79,14 @@ class UnrealWorkflowPlanner {
                             rowIndex = entry.index,
                             entryArguments = entry.arguments,
                             globalArguments = globalArguments,
+                            cookedSandbox = artifactCookDirectory(artifact).takeIf { entry.cookOnLaunch },
                         )
                     },
                 )
             }
         }
 
-        val workspaceRoot = state.workspaceRoot.takeIf(String::isNotBlank)?.let(Path::of)
-            ?: projectPath.parent
-            ?: error("Workspace root is not configured")
+        val workspaceRoot = workspaceRoot(state, projectPath)
         return UnrealExecutionPlan(
             request = request,
             configurationName = configuration.name,
@@ -103,6 +107,11 @@ class UnrealWorkflowPlanner {
             phases = phases,
         )
     }
+
+    private fun workspaceRoot(state: UnrealHelperSettingsState, projectPath: Path): Path =
+        state.workspaceRoot.takeIf(String::isNotBlank)?.let(Path::of)
+            ?: projectPath.parent
+            ?: error("Workspace root is not configured")
 
     private fun MutableList<UnrealPlanPhase>.addBuild(artifacts: Set<UnrealArtifactKey>) {
         if (artifacts.isNotEmpty()) {

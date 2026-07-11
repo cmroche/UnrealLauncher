@@ -59,7 +59,10 @@ class UnrealPlannedActionExecutorTest {
 
         assertEquals("/Engines/UE_5.6/Engine/Build/BatchFiles/RunUAT.sh", processes.commands.last().executable)
         assertEquals("-project=/Workspace/Lyra/Lyra.uproject", processes.commands.last().arguments.first { it.startsWith("-project=") })
-        assertEquals("-archivedirectory=/Artifacts/Lyra", processes.commands.last().arguments.first { it.startsWith("-archivedirectory=") })
+        assertEquals(
+            "-archivedirectory=/Artifacts/Lyra/LyraClient-Client-Win64-Development",
+            processes.commands.last().arguments.first { it.startsWith("-archivedirectory=") },
+        )
         assertEquals("/Workspace/Lyra", processes.commands.last().workingDirectory)
     }
 
@@ -85,7 +88,10 @@ class UnrealPlannedActionExecutorTest {
             processes.commands.map { it.title },
         )
         assertEquals("-cookincremental", processes.commands[1].arguments.first { it == "-cookincremental" })
-        assertEquals("-archivedirectory=/Artifacts/Lyra", processes.commands.last().arguments.first { it.startsWith("-archivedirectory=") })
+        assertEquals(
+            "-archivedirectory=/Artifacts/Lyra/LyraClient-Client-Win64-Development",
+            processes.commands.last().arguments.first { it.startsWith("-archivedirectory=") },
+        )
     }
 
     @Test

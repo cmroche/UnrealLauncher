@@ -27,6 +27,8 @@ import java.util.UUID
 interface UnrealWorkflowPresenter {
     fun start(plan: UnrealExecutionPlan)
 
+    fun actionQueued(action: UnrealPlannedAction) = Unit
+
     fun actionStarted(action: UnrealPlannedAction)
 
     fun output(action: UnrealPlannedAction, text: String, type: ProcessOutputType)
@@ -43,7 +45,11 @@ interface UnrealWorkflowPresenter {
 sealed interface UnrealActionResult {
     data object Success : UnrealActionResult
 
-    data class Failure(val exitCode: Int) : UnrealActionResult
+    data class Failure(
+        val exitCode: Int,
+        val detail: String? = null,
+        val command: String? = null,
+    ) : UnrealActionResult
 
     data object Cancelled : UnrealActionResult
 }
@@ -54,6 +60,9 @@ sealed interface UnrealPlanResult {
     data class Failure(
         val action: UnrealPlannedAction,
         val exitCode: Int,
+        val detail: String? = null,
+        val command: String? = null,
+        val cancelledActions: List<UnrealPlannedAction> = emptyList(),
     ) : UnrealPlanResult
 
     data object Cancelled : UnrealPlanResult
@@ -86,7 +95,11 @@ private class BuildViewUnrealWorkflowPresenter(
     }
 
     override fun actionStarted(action: UnrealPlannedAction) {
-        check(!actionProgresses.containsKey(action)) { "Action has already started: $action" }
+        check(actionProgresses.containsKey(action)) { "Action was not queued: $action" }
+    }
+
+    override fun actionQueued(action: UnrealPlannedAction) {
+        check(!actionProgresses.containsKey(action)) { "Action has already been queued: $action" }
         val phaseState = phaseStates.getOrPut(action.phase) {
             PhaseState(root().startChildProgress(phaseTitle(action.phase)))
         }
@@ -181,16 +194,21 @@ private fun Enum<*>.presentableName(): String =
 private fun actionResult(result: UnrealActionResult): EventResult =
     when (result) {
         UnrealActionResult.Success -> SuccessResultImpl()
-        is UnrealActionResult.Failure -> FailureResultImpl("Process exited with code ${result.exitCode}")
+        is UnrealActionResult.Failure -> FailureResultImpl(failureMessage(result.exitCode, result.detail, result.command))
         UnrealActionResult.Cancelled -> SkippedResultImpl()
     }
 
 private fun planResult(result: UnrealPlanResult): EventResult =
     when (result) {
         UnrealPlanResult.Success -> SuccessResultImpl()
-        is UnrealPlanResult.Failure -> FailureResultImpl(
-            "${actionTitle(result.action)} exited with code ${result.exitCode}",
-        )
+        is UnrealPlanResult.Failure -> FailureResultImpl(buildString {
+            append(actionTitle(result.action)).append(": ")
+            append(failureMessage(result.exitCode, result.detail, result.command))
+            if (result.cancelledActions.isNotEmpty()) {
+                append(". Cancelled: ")
+                append(result.cancelledActions.joinToString { actionTitle(it) })
+            }
+        })
         UnrealPlanResult.Cancelled -> SkippedResultImpl()
     }
 
@@ -201,3 +219,8 @@ private fun combine(current: UnrealActionResult, next: UnrealActionResult): Unre
         current == UnrealActionResult.Cancelled || next == UnrealActionResult.Cancelled -> UnrealActionResult.Cancelled
         else -> UnrealActionResult.Success
     }
+
+private fun failureMessage(exitCode: Int, detail: String?, command: String?): String = buildString {
+    if (detail.isNullOrBlank()) append("Process exited with code $exitCode") else append(detail)
+    if (!command.isNullOrBlank()) append("\nCommand: ").append(command)
+}

@@ -40,19 +40,26 @@ internal object UnrealTargetReceiptResolver {
             normalizedProjectRoot.resolve("Binaries").resolve(key.platform),
             normalizedEngineRoot.resolve("Engine/Binaries").resolve(key.platform),
         )
-        val candidate = searchRoots
-            .asSequence()
-            .flatMap(::receiptCandidates)
-            .mapNotNull { path -> readReceipt(path)?.let { path to it } }
-            .firstOrNull { (_, receipt) ->
-                receipt.targetName == key.targetName &&
-                    receipt.platform == key.platform &&
-                    receipt.configuration == key.buildConfiguration &&
-                    (key.architecture == null || receipt.architecture == key.architecture)
-            }
-            ?: throw IllegalStateException(receiptNotFoundMessage(key, searchRoots))
+        val candidates = searchRoots.asSequence().map { root ->
+            receiptCandidates(root)
+                .mapNotNull { path -> readReceipt(path)?.let { path to it } }
+                .filter { (_, receipt) ->
+                    receipt.targetName == key.targetName &&
+                        receipt.platform == key.platform &&
+                        receipt.configuration == key.buildConfiguration &&
+                        (key.architecture == null || receipt.architecture == key.architecture)
+                }
+                .toList()
+        }.firstOrNull { it.isNotEmpty() }.orEmpty()
+        if (candidates.isEmpty()) throw IllegalStateException(receiptNotFoundMessage(key, searchRoots))
+        if (key.architecture == null && candidates.size > 1) {
+            throw IllegalStateException(
+                "Target receipt architecture is ambiguous for ${key.descriptor()}. Matches: " +
+                    candidates.joinToString { (path, receipt) -> "$path (${receipt.architecture ?: "unspecified"})" },
+            )
+        }
 
-        val (receiptPath, receipt) = candidate
+        val (receiptPath, receipt) = candidates.single()
         val projectPath = resolveProjectPath(receipt, receiptPath, key, normalizedProjectRoot, normalizedEngineRoot)
         val executable = resolveReceiptPath(
             value = receipt.launch,
@@ -117,8 +124,12 @@ internal object UnrealTargetReceiptResolver {
     }
 
     private fun receiptNotFoundMessage(key: UnrealArtifactKey, searchRoots: List<Path>): String =
-        "Could not find target receipt for '${key.targetName}' " +
-            "(${key.platform} ${key.buildConfiguration}" +
-            (key.architecture?.let { " $it" } ?: "") +
-            "). Searched: ${searchRoots.joinToString()}"
+        "Could not find target receipt for ${key.descriptor()}. Searched: ${searchRoots.joinToString()}"
+
+    private fun UnrealArtifactKey.descriptor(): String = buildString {
+        append(targetName).append(" [").append(targetType).append(", ").append(platform)
+            .append(", ").append(buildConfiguration)
+        architecture?.let { append(", ").append(it) }
+        append(']')
+    }
 }

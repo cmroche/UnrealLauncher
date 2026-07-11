@@ -20,6 +20,8 @@ interface UnrealWorkflowProcessListener {
 }
 
 interface UnrealWorkflowProcess {
+    val commandDescription: String?
+        get() = null
     val isProcessTerminating: Boolean
     val isProcessTerminated: Boolean
 
@@ -36,6 +38,10 @@ object UnrealWorkflowProcessFactory {
                     .withParameters(command.arguments)
                     .withWorkDirectory(command.workingDirectory),
             ),
+            commandDescription = buildString {
+                append(command.executable)
+                command.arguments.forEach { append(' ').append(it) }
+            },
         )
 
     fun createLaunch(project: Project, commandLine: GeneralCommandLine, title: String): UnrealWorkflowProcess =
@@ -44,6 +50,7 @@ object UnrealWorkflowProcessFactory {
 
 private class RiderUnrealWorkflowProcess(
     private val handler: OSProcessHandler,
+    override val commandDescription: String? = null,
 ) : UnrealWorkflowProcess {
     override val isProcessTerminating: Boolean
         get() = handler.isProcessTerminating
@@ -82,6 +89,7 @@ private class RiderRunUnrealWorkflowProcess(
     private val handler: OSProcessHandler,
     private val title: String,
 ) : UnrealWorkflowProcess {
+    override val commandDescription: String = handler.commandLine
     override val isProcessTerminating: Boolean
         get() = handler.isProcessTerminating
 

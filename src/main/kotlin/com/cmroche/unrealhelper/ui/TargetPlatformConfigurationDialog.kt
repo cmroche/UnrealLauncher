@@ -24,6 +24,8 @@ import javax.swing.JList
 import javax.swing.JOptionPane
 import javax.swing.JPanel
 import javax.swing.JTable
+import javax.swing.JCheckBox
+import javax.swing.SwingConstants
 import javax.swing.ListSelectionModel
 import javax.swing.JToolBar
 import javax.swing.table.DefaultTableCellRenderer
@@ -56,6 +58,8 @@ class TargetPlatformConfigurationDialog(
         table.columnModel.getColumn(TargetPlatformEntryTableModel.ArgumentsColumn).preferredWidth = 220
         table.columnModel.getColumn(TargetPlatformEntryTableModel.CookColumn).preferredWidth = 70
         table.columnModel.getColumn(TargetPlatformEntryTableModel.IncrementalCookColumn).preferredWidth = 110
+        table.columnModel.getColumn(TargetPlatformEntryTableModel.IncrementalCookColumn).cellRenderer =
+            IncrementalCookCellRenderer()
     }
     private var updatingConfigurationList = false
 
@@ -296,5 +300,27 @@ class TargetPlatformConfigurationDialog(
     private fun targetLabel(targetName: String, targetTypes: Map<String, String>): String {
         val targetType = targetTypes[targetName].orEmpty()
         return if (targetType.isBlank()) targetName else "$targetName ($targetType)"
+    }
+}
+
+internal class IncrementalCookCellRenderer : JCheckBox(), javax.swing.table.TableCellRenderer {
+    init {
+        horizontalAlignment = SwingConstants.CENTER
+        isOpaque = true
+    }
+
+    override fun getTableCellRendererComponent(
+        table: JTable,
+        value: Any?,
+        isSelected: Boolean,
+        hasFocus: Boolean,
+        row: Int,
+        column: Int,
+    ): Component {
+        this.isSelected = value == true
+        isEnabled = table.model.isCellEditable(table.convertRowIndexToModel(row), column)
+        background = if (isSelected) table.selectionBackground else table.background
+        foreground = if (isSelected) table.selectionForeground else table.foreground
+        return this
     }
 }

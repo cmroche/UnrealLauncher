@@ -10,6 +10,8 @@ import com.intellij.execution.process.ProcessOutputType
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.application.ApplicationManager
+import com.cmroche.unrealhelper.actions.UnrealActionMessages
 
 data class UnrealWorkflowConflict(
     val runningActions: List<String>,
@@ -29,6 +31,7 @@ interface UnrealWorkflowExecution {
 class UnrealWorkflowExecutionService private constructor(
     private val queue: UnrealExecutionQueue,
     private val launchService: QuickLaunchProcessService,
+    private val failureReporter: (String) -> Unit,
 ) : UnrealExecutionQueueCallbacks, UnrealWorkflowExecution {
     constructor(project: Project) : this(
         queue = UnrealExecutionQueue(
@@ -36,6 +39,11 @@ class UnrealWorkflowExecutionService private constructor(
             presenterFactory = { UnrealWorkflowPresenter.create(project) },
         ),
         launchService = project.service<QuickLaunchProcessService>(),
+        failureReporter = { message ->
+            ApplicationManager.getApplication().invokeLater {
+                UnrealActionMessages.showError(project, message)
+            }
+        },
     )
 
     init {
@@ -73,7 +81,7 @@ class UnrealWorkflowExecutionService private constructor(
             failed = queue::blockRestart,
         )
         queue.stopAndWait { barrier.arrive(QuickLaunchStopResult.Completed) }
-        launchService.stopAndWait(conflict.launchedProcesses, barrier::arrive)
+        launchService.stopAndWait(conflict.launchedProcesses, barrier::arrive, queue::recoverBlockedRestart)
     }
 
     override fun launchStarted(action: Launch, process: UnrealWorkflowProcess) {
@@ -92,6 +100,22 @@ class UnrealWorkflowExecutionService private constructor(
         launchService.runningLaunchTerminated(process)
     }
 
+    override fun workflowFailed(result: UnrealPlanResult.Failure) {
+        failureReporter(buildString {
+            append("Unreal workflow failed: ").append(result.action.displayName())
+            result.detail?.let { append("\n").append(it) }
+            result.command?.let { append("\nCommand: ").append(it) }
+            if (result.cancelledActions.isNotEmpty()) {
+                append("\nCancelled: ")
+                append(result.cancelledActions.joinToString { it.displayName() })
+            }
+        })
+    }
+
+    override fun restartFailed(message: String) {
+        failureReporter("Unreal workflow restart failed: $message. The replacement was not started.")
+    }
+
     private fun Launch.quickLaunchKey(): QuickLaunchKey =
         QuickLaunchKey(
             configurationName = configurationName,
@@ -107,7 +131,7 @@ class UnrealWorkflowExecutionService private constructor(
     private class CompletionBarrier(
         private var parties: Int,
         private val completed: () -> Unit,
-        private val failed: () -> Unit,
+        private val failed: (String) -> Unit,
     ) {
         private val lock = Any()
         private var resultLatched = false
@@ -118,7 +142,7 @@ class UnrealWorkflowExecutionService private constructor(
                 when (result) {
                     is QuickLaunchStopResult.Failed -> {
                         resultLatched = true
-                        failed
+                        { failed(result.cause.message ?: result.cause::class.simpleName.orEmpty()) }
                     }
                     QuickLaunchStopResult.Completed -> {
                         parties--
@@ -139,6 +163,7 @@ class UnrealWorkflowExecutionService private constructor(
         internal fun createForTest(
             queue: UnrealExecutionQueue,
             launchService: QuickLaunchProcessService,
-        ): UnrealWorkflowExecutionService = UnrealWorkflowExecutionService(queue, launchService)
+            failureReporter: (String) -> Unit = {},
+        ): UnrealWorkflowExecutionService = UnrealWorkflowExecutionService(queue, launchService, failureReporter)
     }
 }

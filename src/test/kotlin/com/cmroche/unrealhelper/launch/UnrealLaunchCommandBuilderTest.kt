@@ -3,10 +3,28 @@ package com.cmroche.unrealhelper.launch
 import com.cmroche.unrealhelper.workflow.Launch
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Path
 
 class UnrealLaunchCommandBuilderTest {
+    @Test
+    fun `cooked launch uses its loose cook sandbox`() {
+        val sandbox = Path.of("/Workspace/Lyra/Saved/UnrealHelper/Cooked/LyraClient/WindowsClient")
+        val command = UnrealLaunchCommandBuilder.build(
+            launch(cookedSandbox = sandbox),
+            artifact(),
+        )
+
+        assertTrue(command.parametersList.parameters.contains("-sandbox=$sandbox"))
+    }
+
+    @Test
+    fun `uncooked launch has no sandbox argument`() {
+        val command = UnrealLaunchCommandBuilder.build(launch(), artifact())
+        assertFalse(command.parametersList.parameters.any { it.startsWith("-sandbox=") })
+    }
     @Test
     fun `engine launch passes project before entry and global arguments`() {
         val engineRoot = Path.of("/Workspace/UnrealEngine")
@@ -94,10 +112,18 @@ class UnrealLaunchCommandBuilderTest {
         assertEquals(listOf("-game", "-log"), command.parametersList.list)
     }
 
+    private fun artifact(): ResolvedLaunchArtifact {
+        val projectPath = Path.of("/Workspace/Lyra/Lyra.uproject")
+        val engineRoot = Path.of("/Workspace/UnrealEngine")
+        val executable = Path.of("/Workspace/Lyra/Binaries/Win64/LyraClient.exe")
+        return ResolvedLaunchArtifact(Path.of("/receipt.target"), executable, projectPath, executable.parent, engineRoot)
+    }
+
     private fun launch(
-        projectPath: Path,
-        entryArguments: String,
-        globalArguments: String,
+        projectPath: Path = Path.of("/Workspace/Lyra/Lyra.uproject"),
+        entryArguments: String = "",
+        globalArguments: String = "",
+        cookedSandbox: Path? = null,
     ): Launch = Launch(
         artifact = UnrealArtifactKey(
             projectPath = projectPath,
@@ -110,5 +136,6 @@ class UnrealLaunchCommandBuilderTest {
         rowIndex = 0,
         entryArguments = entryArguments,
         globalArguments = globalArguments,
+        cookedSandbox = cookedSandbox,
     )
 }

@@ -25,8 +25,8 @@ class UnrealCommandBuilderTest {
         )
         assertEquals(
             listOf(
-                "-Target=LyraClient Win64 Development -Project=/Workspace/Lyra/Lyra.uproject",
-                "-Target=LyraServer Win64 Development -Project=/Workspace/Lyra/Lyra.uproject",
+                "-Target=LyraClient Win64 Development -Project=\"/Workspace/Lyra/Lyra.uproject\"",
+                "-Target=LyraServer Win64 Development -Project=\"/Workspace/Lyra/Lyra.uproject\"",
                 "-WaitMutex",
             ),
             command.arguments,
@@ -59,6 +59,8 @@ class UnrealCommandBuilderTest {
                 "-cook",
                 "-skipstage",
                 "-skippackage",
+                "-CookOutputDir=/Workspace/Lyra/Saved/UnrealHelper/Cooked/LyraClient-Client-Win64-Development/WindowsClient",
+                "-client",
                 "-targetplatform=Win64",
                 "-clientconfig=Development",
             ),
@@ -71,6 +73,14 @@ class UnrealCommandBuilderTest {
         val command = UnrealCommandBuilder.cook(context(), UnrealCookMode.INCREMENTAL)
 
         assertTrue(command.arguments.contains("-cookincremental"))
+    }
+
+    @Test
+    fun `cook writes to its artifact specific output directory`() {
+        val output = Path.of("/Workspace/Lyra/Saved/UnrealHelper/Cooked/LyraClient/WindowsClient")
+        val command = UnrealCommandBuilder.cook(context(), UnrealCookMode.FULL, output)
+
+        assertTrue(command.arguments.contains("-CookOutputDir=$output"))
     }
 
     @Test
@@ -91,12 +101,18 @@ class UnrealCommandBuilderTest {
                 "-skipcook",
                 "-stage",
                 "-skippackage",
+                "-CookOutputDir=/cook/LyraServer",
+                "-stagingdirectory=/stage/LyraServer",
                 "-server",
                 "-noclient",
                 "-servertargetplatform=Win64",
                 "-serverconfig=Development",
             ),
-            command.arguments,
+            UnrealCommandBuilder.stage(
+                context(targetName = "LyraServer", targetType = "Server"),
+                Path.of("/cook/LyraServer"),
+                Path.of("/stage/LyraServer"),
+            ).arguments,
         )
     }
 
@@ -109,6 +125,9 @@ class UnrealCommandBuilderTest {
                 packageDirectory = Path.of("/Artifacts/Lyra"),
                 buildConfiguration = "Shipping",
             ),
+            Path.of("/cook/LyraClient"),
+            Path.of("/stage/LyraClient"),
+            Path.of("/Artifacts/Lyra/LyraClient"),
         )
 
         assertEquals("Unreal Package LyraClient Client Win64", command.title)
@@ -122,14 +141,41 @@ class UnrealCommandBuilderTest {
                 "-skipbuild",
                 "-skipcook",
                 "-skipstage",
+                "-CookOutputDir=/cook/LyraClient",
+                "-stagingdirectory=/stage/LyraClient",
                 "-package",
                 "-pak",
                 "-archive",
-                "-archivedirectory=/Artifacts/Lyra",
+                "-archivedirectory=/Artifacts/Lyra/LyraClient",
+                "-client",
                 "-targetplatform=Win64",
                 "-clientconfig=Shipping",
             ),
             command.arguments,
+        )
+    }
+
+    @Test
+    fun `batched target descriptor quotes and escapes project paths`() {
+        val command = UnrealCommandBuilder.buildBatch(
+            listOf(context(uprojectPath = Path.of("/Workspace/My Project/Lyra.uproject"))),
+        )
+        assertEquals(
+            "-Target=LyraGame Win64 Development -Project=\"/Workspace/My Project/Lyra.uproject\"",
+            command.arguments.first(),
+        )
+    }
+
+    @Test
+    fun `batched target descriptor preserves Windows slashes and escapes embedded quotes`() {
+        val command = UnrealCommandBuilder.buildBatch(
+            listOf(context(uprojectPath = Path.of("C:\\My \"Game\"\\Lyra.uproject"))),
+            osName = "Windows 11",
+        )
+
+        assertEquals(
+            "-Target=LyraGame Win64 Development -Project=\"C:\\My \\\"Game\\\"\\Lyra.uproject\"",
+            command.arguments.first(),
         )
     }
 

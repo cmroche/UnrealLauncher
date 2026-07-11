@@ -1,6 +1,7 @@
 package com.cmroche.unrealhelper.launch
 
 import com.cmroche.unrealhelper.execution.UnrealWorkflowProcess
+import com.cmroche.unrealhelper.execution.UnrealRestartTimeoutScheduler
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.configurations.GeneralCommandLine
@@ -40,8 +41,12 @@ sealed class QuickLaunchStopResult {
 @Service(Service.Level.PROJECT)
 class QuickLaunchProcessService private constructor(
     private val processFactory: QuickLaunchProcessFactory,
+    private val timeoutScheduler: UnrealRestartTimeoutScheduler,
 ) : Disposable {
-    constructor(project: Project) : this(RiderQuickLaunchProcessFactory(project))
+    constructor(project: Project) : this(
+        RiderQuickLaunchProcessFactory(project),
+        UnrealRestartTimeoutScheduler.DEFAULT,
+    )
 
     private val lock = Any()
     private val runningProcesses = mutableMapOf<QuickLaunchInstanceId, TrackedLaunch>()
@@ -122,6 +127,12 @@ class QuickLaunchProcessService private constructor(
     fun stopAndWait(
         launches: Collection<RunningLaunchInfo>,
         callback: (QuickLaunchStopResult) -> Unit,
+    ) = stopAndWait(launches, callback, recovered = {})
+
+    fun stopAndWait(
+        launches: Collection<RunningLaunchInfo>,
+        callback: (QuickLaunchStopResult) -> Unit,
+        recovered: () -> Unit,
     ) {
         val processes = synchronized(lock) {
             launches.mapNotNull { selected ->
@@ -145,15 +156,20 @@ class QuickLaunchProcessService private constructor(
             return completion
         }
         fun processTerminated(process: TrackedLaunchProcess) {
-            val completion = synchronized(waitLock) {
+            val (completion, recovery) = synchronized(waitLock) {
                 remaining.remove(process)
                 if (destroyRequestsFinished && remaining.isEmpty()) {
-                    completeLocked(QuickLaunchStopResult.Completed)
+                    if (result is QuickLaunchStopResult.Failed) {
+                        null to recovered
+                    } else {
+                        completeLocked(QuickLaunchStopResult.Completed) to null
+                    }
                 } else {
-                    null
+                    null to null
                 }
             }
             completion?.let(callback)
+            recovery?.invoke()
         }
 
         processes.forEach { process ->
@@ -179,6 +195,20 @@ class QuickLaunchProcessService private constructor(
             }
         }
         completion?.let(callback)
+        timeoutScheduler.schedule {
+            val timedOut = synchronized(waitLock) {
+                if (result == null && remaining.isNotEmpty()) {
+                    completeLocked(
+                        QuickLaunchStopResult.Failed(
+                            IllegalStateException("Timed out waiting for ${remaining.size} Unreal launch process(es) to stop"),
+                        ),
+                    )
+                } else {
+                    null
+                }
+            }
+            timedOut?.let(callback)
+        }
     }
 
     fun stopAll() {
@@ -231,8 +261,10 @@ class QuickLaunchProcessService private constructor(
     )
 
     companion object {
-        internal fun createForTest(processFactory: QuickLaunchProcessFactory): QuickLaunchProcessService =
-            QuickLaunchProcessService(processFactory)
+        internal fun createForTest(
+            processFactory: QuickLaunchProcessFactory,
+            timeoutScheduler: UnrealRestartTimeoutScheduler = UnrealRestartTimeoutScheduler.NONE,
+        ): QuickLaunchProcessService = QuickLaunchProcessService(processFactory, timeoutScheduler)
     }
 }
 

@@ -120,13 +120,30 @@ class UnrealWorkflowPreflightValidator(
                 }
             }
         }
-        if (executionPlan.phases.any { it.phase == UnrealPhase.PACKAGE } &&
-            !Files.isDirectory(environment.packageDirectory)
-        ) {
-            errors += "Package destination was not found at ${environment.packageDirectory}"
+        if (executionPlan.phases.any { it.phase == UnrealPhase.PACKAGE } && errors.isEmpty()) {
+            ensurePackageDestination(environment.packageDirectory, errors)
         }
 
         return UnrealWorkflowPreflightResult(executionPlan, errors)
+    }
+
+    private fun ensurePackageDestination(destination: Path, errors: MutableList<String>) {
+        try {
+            if (Files.exists(destination) && !Files.isDirectory(destination)) {
+                errors += "Package destination is not a directory at $destination"
+                return
+            }
+            val nearestExisting = generateSequence(destination.toAbsolutePath().normalize()) { it.parent }
+                .firstOrNull(Files::exists)
+            if (nearestExisting == null || !Files.isDirectory(nearestExisting) || !Files.isWritable(nearestExisting)) {
+                errors += "Package destination is not writable at $destination"
+                return
+            }
+            Files.createDirectories(destination)
+            if (!Files.isWritable(destination)) errors += "Package destination is not writable at $destination"
+        } catch (exception: RuntimeException) {
+            errors += "Package destination could not be created at $destination: ${exception.message}"
+        }
     }
 
     private fun validatePlan(

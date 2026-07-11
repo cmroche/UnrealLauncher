@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import javax.swing.JTable
 
 class TargetPlatformEntryTableModelTest {
     @Test
@@ -44,5 +45,19 @@ class TargetPlatformEntryTableModelTest {
         assertFalse(model.rows.single().incrementalCookOnLaunch)
         assertFalse(model.isCellEditable(0, TargetPlatformEntryTableModel.IncrementalCookColumn))
         assertEquals("MissingSavedTarget", model.snapshot().single().targetName)
+    }
+
+    @Test
+    fun `incremental cook renderer is visually disabled when cook is off`() {
+        val model = TargetPlatformEntryTableModel().also {
+            it.setRows(listOf(TargetPlatformEntry(targetName = "Lyra", platform = "Mac")))
+        }
+        val table = JTable(model)
+
+        val component = IncrementalCookCellRenderer().getTableCellRendererComponent(
+            table, false, false, false, 0, TargetPlatformEntryTableModel.IncrementalCookColumn,
+        )
+
+        assertFalse(component.isEnabled)
     }
 }

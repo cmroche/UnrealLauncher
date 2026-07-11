@@ -1,6 +1,8 @@
 package com.cmroche.unrealhelper.command
 
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
+import com.cmroche.unrealhelper.workflow.artifactCookDirectory
+import com.cmroche.unrealhelper.workflow.artifactStageDirectory
 import java.nio.file.Path
 
 object UnrealCommandBuilder {
@@ -11,7 +13,7 @@ object UnrealCommandBuilder {
         require(contexts.isNotEmpty())
         val targets = contexts.distinctBy { it.artifact }.map { context ->
             "-Target=${context.targetName} ${context.platform} ${context.buildConfiguration} " +
-                "-Project=${context.uprojectPath}"
+                "-Project=${quoteNested(context.uprojectPath.toString())}"
         }
         val first = contexts.first()
         return UnrealCommand(
@@ -25,6 +27,7 @@ object UnrealCommandBuilder {
     fun cook(
         context: UnrealCommandContext,
         mode: UnrealCookMode,
+        outputDirectory: Path = artifactCookDirectory(context.artifact),
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand =
         uatCommand(
@@ -34,22 +37,31 @@ object UnrealCommandBuilder {
             phaseArguments = buildList {
                 addAll(listOf("-skipbuild", "-cook", "-skipstage", "-skippackage"))
                 if (mode == UnrealCookMode.INCREMENTAL) add("-cookincremental")
+                add("-CookOutputDir=$outputDirectory")
             },
         )
 
     fun stage(
         context: UnrealCommandContext,
+        cookOutputDirectory: Path = artifactCookDirectory(context.artifact),
+        stagingDirectory: Path = artifactStageDirectory(context.artifact),
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand =
         uatCommand(
             title = "Unreal Stage ${context.targetName} ${context.targetType} ${context.platform}",
             context = context,
             osName = osName,
-            phaseArguments = listOf("-skipbuild", "-skipcook", "-stage", "-skippackage"),
+            phaseArguments = listOf(
+                "-skipbuild", "-skipcook", "-stage", "-skippackage",
+                "-CookOutputDir=$cookOutputDirectory", "-stagingdirectory=$stagingDirectory",
+            ),
         )
 
     fun packageProject(
         context: UnrealCommandContext,
+        cookOutputDirectory: Path = artifactCookDirectory(context.artifact),
+        stagingDirectory: Path = artifactStageDirectory(context.artifact),
+        archiveDirectory: Path = context.packageDirectory,
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand =
         uatCommand(
@@ -60,10 +72,12 @@ object UnrealCommandBuilder {
                 "-skipbuild",
                 "-skipcook",
                 "-skipstage",
+                "-CookOutputDir=$cookOutputDirectory",
+                "-stagingdirectory=$stagingDirectory",
                 "-package",
                 "-pak",
                 "-archive",
-                "-archivedirectory=${context.packageDirectory}",
+                "-archivedirectory=$archiveDirectory",
             ),
         )
 
@@ -94,11 +108,10 @@ object UnrealCommandBuilder {
                 "-servertargetplatform=${context.platform}",
                 "-serverconfig=${context.buildConfiguration}",
             )
-        } else {
-            listOf(
-                "-targetplatform=${context.platform}",
-                "-clientconfig=${context.buildConfiguration}",
-            )
+        } else buildList {
+            if (context.targetType == "Client") add("-client")
+            add("-targetplatform=${context.platform}")
+            add("-clientconfig=${context.buildConfiguration}")
         }
 
     private fun unrealBuildTool(engineRoot: Path, osName: String): String =
@@ -118,4 +131,26 @@ object UnrealCommandBuilder {
 
     private fun isWindows(osName: String): Boolean =
         osName.startsWith("Windows", ignoreCase = true)
+
+    private fun quoteNested(value: String): String = buildString {
+        append('"')
+        var backslashes = 0
+        value.forEach { character ->
+            when (character) {
+                '\\' -> backslashes++
+                '"' -> {
+                    repeat(backslashes * 2 + 1) { append('\\') }
+                    append('"')
+                    backslashes = 0
+                }
+                else -> {
+                    repeat(backslashes) { append('\\') }
+                    backslashes = 0
+                    append(character)
+                }
+            }
+        }
+        repeat(backslashes * 2) { append('\\') }
+        append('"')
+    }
 }

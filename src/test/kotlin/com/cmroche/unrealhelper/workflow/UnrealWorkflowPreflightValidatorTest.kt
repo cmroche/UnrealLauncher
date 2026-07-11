@@ -79,9 +79,10 @@ class UnrealWorkflowPreflightValidatorTest {
     }
 
     @Test
-    fun `package requires UBT UAT and package destination`() {
-        val fixture = fixture(createUbt = false, createUat = false)
-        fixture.state.packageDirectory = fixture.workspace.resolve("missing-package").toString()
+    fun `package creates a missing destination after validating its writable parent`() {
+        val fixture = fixture()
+        val destination = fixture.workspace.resolve("missing-package")
+        fixture.state.packageDirectory = destination.toString()
 
         val errors = validator().validate(
             UnrealWorkflowRequest.PACKAGE,
@@ -90,10 +91,24 @@ class UnrealWorkflowPreflightValidatorTest {
             fixture.workspace.toString(),
         )
 
-        assertEquals(3, errors.size)
-        assertTrue(errors.any { it.startsWith("UnrealBuildTool was not found at ") })
-        assertTrue(errors.any { it.startsWith("RunUAT was not found at ") })
-        assertTrue(errors.any { it.startsWith("Package destination was not found at ") })
+        assertEquals(emptyList<String>(), errors)
+        assertTrue(Files.isDirectory(destination))
+    }
+
+    @Test
+    fun `package rejects a destination whose nearest path component is a file`() {
+        val fixture = fixture()
+        val file = Files.createFile(fixture.workspace.resolve("not-a-directory"))
+        fixture.state.packageDirectory = file.resolve("Packages").toString()
+
+        val errors = validator().validate(
+            UnrealWorkflowRequest.PACKAGE,
+            fixture.configuration,
+            fixture.state,
+            fixture.workspace.toString(),
+        )
+
+        assertTrue(errors.single().startsWith("Package destination is not writable at "))
     }
 
     @Test

@@ -291,14 +291,34 @@ class QuickLaunchProcessServiceTest {
         service.launch(key, artifact(targetName = "LyraClient", targetType = "Client"), commandLine())
         val selected = service.runningLaunches()
         val results = mutableListOf<QuickLaunchStopResult>()
+        var recoveries = 0
 
-        service.stopAndWait(selected, results::add)
+        service.stopAndWait(selected, results::add) { recoveries++ }
 
         assertEquals(listOf(QuickLaunchStopResult.Failed(destroyFailure)), results)
 
         process.terminate()
 
         assertEquals(listOf(QuickLaunchStopResult.Failed(destroyFailure)), results)
+        assertEquals(1, recoveries)
+    }
+
+    @Test
+    fun `stop and wait has a bounded timeout and recovers after exact termination`() {
+        val timeouts = RecordingRestartTimeoutScheduler()
+        val factory = FakeQuickLaunchProcessFactory()
+        val service = QuickLaunchProcessService.createForTest(factory, timeouts)
+        val key = key(targetName = "LyraClient", targetType = "Client")
+        service.launch(key, artifact("LyraClient", "Client"), commandLine())
+        val results = mutableListOf<QuickLaunchStopResult>()
+        var recoveries = 0
+
+        service.stopAndWait(service.runningLaunches(), results::add) { recoveries++ }
+        timeouts.fire()
+
+        assertTrue((results.single() as QuickLaunchStopResult.Failed).cause.message.orEmpty().contains("Timed out"))
+        factory.processes.single().terminate()
+        assertEquals(1, recoveries)
     }
 
     @Test
@@ -347,6 +367,12 @@ class QuickLaunchProcessServiceTest {
 
     private fun commandLine(): GeneralCommandLine =
         GeneralCommandLine("/tmp/MyGame")
+}
+
+private class RecordingRestartTimeoutScheduler : com.cmroche.unrealhelper.execution.UnrealRestartTimeoutScheduler {
+    private val tasks = mutableListOf<() -> Unit>()
+    override fun schedule(task: () -> Unit) { tasks += task }
+    fun fire() { tasks.removeFirst().invoke() }
 }
 
 private class TestWorkflowProcess : com.cmroche.unrealhelper.execution.UnrealWorkflowProcess {

@@ -84,7 +84,7 @@ class UnrealTargetReceiptTest {
     }
 
     @Test
-    fun `accepts any receipt architecture when the artifact architecture is unknown`() {
+    fun `accepts the sole exact receipt architecture when the artifact architecture is unknown`() {
         val roots = roots()
         val receiptPath = roots.projectRoot.resolve("Binaries/Linux/LyraServer-Linux-Shipping.target")
         writeReceipt(
@@ -110,6 +110,24 @@ class UnrealTargetReceiptTest {
         )
 
         assertEquals(receiptPath, artifact.receiptPath)
+    }
+
+    @Test
+    fun `unknown architecture fails explicitly when multiple exact receipts exist`() {
+        val roots = roots()
+        val receiptRoot = roots.projectRoot.resolve("Binaries/Mac")
+        writeReceipt(receiptRoot.resolve("LyraEditor-Mac-Development-arm64.target"), "LyraEditor", "Mac", "Development", "arm64", "../../Lyra.uproject", "arm64/Lyra")
+        writeReceipt(receiptRoot.resolve("LyraEditor-Mac-Development-x64.target"), "LyraEditor", "Mac", "Development", "x64", "../../Lyra.uproject", "x64/Lyra")
+
+        val exception = runCatching {
+            UnrealTargetReceiptResolver.resolve(key(roots), roots.projectRoot, roots.engineRoot)
+        }.exceptionOrNull()
+
+        assertTrue(exception is IllegalStateException)
+        assertTrue(exception?.message.orEmpty().contains("ambiguous"))
+        assertTrue(exception?.message.orEmpty().contains("arm64"))
+        assertTrue(exception?.message.orEmpty().contains("x64"))
+        assertTrue(exception?.message.orEmpty().contains("LyraEditor [Editor, Mac, Development]"))
     }
 
     @Test

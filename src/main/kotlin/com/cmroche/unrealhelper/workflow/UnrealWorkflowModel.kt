@@ -31,6 +31,7 @@ data class BuildBatch(
 data class Cook(
     val artifact: UnrealArtifactKey,
     val mode: UnrealCookMode,
+    val outputDirectory: Path = artifactCookDirectory(artifact),
 ) : UnrealPlannedAction {
     override val phase: UnrealPhase = UnrealPhase.COOK
     override val artifacts: Set<UnrealArtifactKey> = setOf(artifact)
@@ -38,6 +39,8 @@ data class Cook(
 
 data class Stage(
     val artifact: UnrealArtifactKey,
+    val cookOutputDirectory: Path = artifactCookDirectory(artifact),
+    val stagingDirectory: Path = artifactStageDirectory(artifact),
 ) : UnrealPlannedAction {
     override val phase: UnrealPhase = UnrealPhase.STAGE
     override val artifacts: Set<UnrealArtifactKey> = setOf(artifact)
@@ -45,6 +48,9 @@ data class Stage(
 
 data class Package(
     val artifact: UnrealArtifactKey,
+    val cookOutputDirectory: Path = artifactCookDirectory(artifact),
+    val stagingDirectory: Path = artifactStageDirectory(artifact),
+    val archiveDirectory: Path? = null,
 ) : UnrealPlannedAction {
     override val phase: UnrealPhase = UnrealPhase.PACKAGE
     override val artifacts: Set<UnrealArtifactKey> = setOf(artifact)
@@ -56,6 +62,7 @@ data class Launch(
     val rowIndex: Int,
     val entryArguments: String,
     val globalArguments: String,
+    val cookedSandbox: Path? = null,
 ) : UnrealPlannedAction {
     override val phase: UnrealPhase = UnrealPhase.LAUNCH
     override val artifacts: Set<UnrealArtifactKey> = setOf(artifact)
@@ -84,3 +91,33 @@ data class UnrealExecutionPlan(
     val environment: UnrealExecutionEnvironment,
     val phases: List<UnrealPlanPhase>,
 )
+
+internal fun artifactCookDirectory(artifact: UnrealArtifactKey): Path = artifact.projectPath.parent
+    .resolve("Saved/UnrealHelper/Cooked")
+    .resolve(artifactDirectoryName(artifact))
+    .resolve(cookPlatformName(artifact))
+
+internal fun artifactStageDirectory(artifact: UnrealArtifactKey): Path = artifact.projectPath.parent
+    .resolve("Saved/UnrealHelper/Staged")
+    .resolve(artifactDirectoryName(artifact))
+
+internal fun artifactDirectoryName(artifact: UnrealArtifactKey): String = listOfNotNull(
+    artifact.targetName,
+    artifact.targetType,
+    artifact.platform,
+    artifact.buildConfiguration,
+    artifact.architecture,
+).joinToString("-") { value -> value.replace(Regex("[^A-Za-z0-9_.-]"), "_") }
+
+internal fun cookPlatformName(artifact: UnrealArtifactKey): String {
+    val base = when (artifact.platform.lowercase()) {
+        "win64", "windows" -> "Windows"
+        "mac" -> "Mac"
+        else -> artifact.platform
+    }
+    return when (artifact.targetType.lowercase()) {
+        "client" -> "${base}Client"
+        "server" -> "${base}Server"
+        else -> base
+    }
+}

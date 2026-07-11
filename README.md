@@ -29,7 +29,7 @@ Empty phases are omitted.
 
 - **Build** builds every unique target/platform artifact in one compatible UnrealBuildTool batch and ignores row Cook flags.
 - **Cook** performs one full cook for every unique artifact and does not build, stage, or package.
-- **Package** builds, fully cooks, stages, and packages every unique artifact to the configured package directory.
+- **Package** builds, fully cooks, stages, and packages every unique artifact beneath an isolated target directory in the configured package directory. Cook, staging, and archive state is never shared between exact targets.
 - **Launch** builds every unique artifact, cooks only rows with Cook enabled, and launches every row. Launch never stages or packages.
 
 Repeated rows intentionally produce repeated Launch processes, while their identical build and cook prerequisites collapse. A full cook supersedes an otherwise identical incremental cook. Game, Client, and Server cooks remain distinct, as do different exact target names.
@@ -38,7 +38,7 @@ Repeated rows intentionally produce repeated Launch processes, while their ident
 
 After Build succeeds, Launch resolves the exact target receipt for the target name, platform, build configuration, and architecture when known. The receipt's `Launch` product is authoritative; receipt macros and project-relative paths are resolved against the configured engine and project roots. Engine-shared launch products receive the project path when required.
 
-The freshly compiled receipt executable starts directly. With Cook enabled it runs after the target-specific loose cook completes; with Cook disabled it starts immediately after Build. Launch does not copy binaries, stage content, create a package, or search archived packages. If no matching receipt exists, the workflow fails rather than guessing an executable.
+The freshly compiled receipt executable starts directly. With Cook enabled, UAT writes to a target- and role-specific cook output and the executable receives that loose cooked directory as its `-sandbox`; with Cook disabled it starts immediately after Build without a sandbox argument. Launch does not copy binaries, stage content, create a package, or search archived packages. If no matching receipt exists—or multiple architectures match while architecture is unknown—the workflow fails rather than guessing an executable.
 
 ## Progress, Failure, And Restart
 

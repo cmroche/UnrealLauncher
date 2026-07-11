@@ -10,9 +10,22 @@ import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.intellij.execution.process.ProcessOutputType
+import com.intellij.util.concurrency.AppExecutorUtil
 import java.util.ArrayDeque
+import java.util.concurrent.TimeUnit
 
 enum class UnrealPlanState { IDLE, RUNNING, STOPPING, SUCCEEDED, FAILED, RESTART_BLOCKED }
+
+fun interface UnrealRestartTimeoutScheduler {
+    fun schedule(task: () -> Unit)
+
+    companion object {
+        val NONE = UnrealRestartTimeoutScheduler { }
+        val DEFAULT = UnrealRestartTimeoutScheduler { task ->
+            AppExecutorUtil.getAppScheduledExecutorService().schedule(task, 30, TimeUnit.SECONDS)
+        }
+    }
+}
 
 data class UnrealExecutionQueueSnapshot(
     val state: UnrealPlanState,
@@ -47,6 +60,10 @@ interface UnrealExecutionQueueCallbacks {
 
     fun launchTerminated(action: Launch, process: UnrealWorkflowProcess, exitCode: Int) = Unit
 
+    fun workflowFailed(result: UnrealPlanResult.Failure) = Unit
+
+    fun restartFailed(message: String) = Unit
+
     companion object {
         val NONE: UnrealExecutionQueueCallbacks = object : UnrealExecutionQueueCallbacks {}
     }
@@ -56,6 +73,7 @@ class UnrealExecutionQueue(
     private val executor: UnrealPlannedActionExecutor,
     private val presenterFactory: () -> UnrealWorkflowPresenter,
     private var callbacks: UnrealExecutionQueueCallbacks = UnrealExecutionQueueCallbacks.NONE,
+    private val timeoutScheduler: UnrealRestartTimeoutScheduler = UnrealRestartTimeoutScheduler.DEFAULT,
 ) {
     private val lock = Any()
     private val queued = ArrayDeque<QueuedAction>()
@@ -64,6 +82,7 @@ class UnrealExecutionQueue(
     private var presenter: UnrealWorkflowPresenter? = null
     private var pendingReplacement: UnrealExecutionPlan? = null
     private var pendingStopCompletion: (() -> Unit)? = null
+    private var restartAwaitingExternalRecovery = false
 
     fun start(plan: UnrealExecutionPlan) = synchronized(lock) {
         check(!isActiveLocked()) { "An Unreal workflow is already active" }
@@ -83,14 +102,19 @@ class UnrealExecutionQueue(
         this.callbacks = callbacks
     }
 
-    internal fun blockRestart() = synchronized(lock) {
-        blockRestartLocked()
+    internal fun blockRestart(message: String = "Could not stop all running Unreal processes") = synchronized(lock) {
+        blockRestartLocked(message, awaitExternalRecovery = true)
+    }
+
+    internal fun recoverBlockedRestart() = synchronized(lock) {
+        restartAwaitingExternalRecovery = false
+        if (state == UnrealPlanState.RESTART_BLOCKED && running == null) state = UnrealPlanState.FAILED
     }
 
     fun stopForReplacement(plan: UnrealExecutionPlan) = synchronized(lock) {
         pendingStopCompletion = null
         pendingReplacement = plan
-        queued.clear()
+        cancelQueuedLocked()
 
         val current = running
         if (current == null) {
@@ -102,8 +126,9 @@ class UnrealExecutionQueue(
         state = UnrealPlanState.STOPPING
         try {
             current.process.destroy()
-        } catch (_: RuntimeException) {
-            blockRestartLocked()
+            scheduleRestartTimeoutLocked(current)
+        } catch (exception: RuntimeException) {
+            blockRestartLocked("Could not stop ${current.action.displayName()}: ${exception.message}")
             return@synchronized
         }
     }
@@ -111,7 +136,7 @@ class UnrealExecutionQueue(
     fun stopAndWait(callback: () -> Unit) = synchronized(lock) {
         pendingReplacement = null
         pendingStopCompletion = callback
-        queued.clear()
+        cancelQueuedLocked()
 
         val current = running
         if (current == null) {
@@ -125,8 +150,9 @@ class UnrealExecutionQueue(
         state = UnrealPlanState.STOPPING
         try {
             current.process.destroy()
-        } catch (_: RuntimeException) {
-            blockRestartLocked()
+            scheduleRestartTimeoutLocked(current)
+        } catch (exception: RuntimeException) {
+            blockRestartLocked("Could not stop ${current.action.displayName()}: ${exception.message}")
         }
     }
 
@@ -140,6 +166,7 @@ class UnrealExecutionQueue(
         pendingReplacement = null
         state = UnrealPlanState.RUNNING
         newPresenter.start(plan)
+        queued.forEach { newPresenter.actionQueued(it.action) }
         startNextLocked()
     }
 
@@ -157,8 +184,8 @@ class UnrealExecutionQueue(
         presenter?.actionStarted(action)
         val process = try {
             executor.create(action, queuedAction.environment)
-        } catch (_: RuntimeException) {
-            failLocked(action, PROCESS_START_FAILURE)
+        } catch (exception: RuntimeException) {
+            failLocked(action, PROCESS_START_FAILURE, exceptionDetail(action, exception))
             return
         }
         val runningAction = RunningAction(action, process)
@@ -166,10 +193,15 @@ class UnrealExecutionQueue(
 
         try {
             process.start(listenerFor(runningAction))
-        } catch (_: RuntimeException) {
+        } catch (exception: RuntimeException) {
             if (running === runningAction) {
                 running = null
-                failLocked(action, PROCESS_START_FAILURE)
+                failLocked(
+                    action,
+                    PROCESS_START_FAILURE,
+                    exceptionDetail(action, exception),
+                    process.commandDescription,
+                )
             }
         }
     }
@@ -212,13 +244,14 @@ class UnrealExecutionQueue(
                         presenter?.actionFinished(action, UnrealActionResult.Cancelled)
                         presenter?.finish(UnrealPlanResult.Cancelled)
                         presenter = null
+                        if (!restartAwaitingExternalRecovery) state = UnrealPlanState.FAILED
                     }
                     return@synchronized
                 }
 
                 if (state == UnrealPlanState.STOPPING) {
                     if (!runningAction.process.isProcessTerminated) {
-                        blockRestartLocked()
+                        blockRestartLocked("Stop callback completed but ${action.displayName()} is still running")
                         return@synchronized
                     }
                     running = null
@@ -240,18 +273,35 @@ class UnrealExecutionQueue(
                     presenter?.actionFinished(action, UnrealActionResult.Success)
                     startNextLocked()
                 } else {
-                    failLocked(action, exitCode)
+                    failLocked(action, exitCode, command = runningAction.process.commandDescription)
                 }
             }
         }
 
-    private fun failLocked(action: UnrealPlannedAction, exitCode: Int) {
-        queued.clear()
+    private fun failLocked(
+        action: UnrealPlannedAction,
+        exitCode: Int,
+        detail: String? = null,
+        command: String? = null,
+    ) {
+        val cancelled = queued.map { it.action }
+        if (!detail.isNullOrBlank()) presenter?.output(action, "$detail\n", ProcessOutputType.STDERR)
+        cancelQueuedLocked()
         state = UnrealPlanState.FAILED
-        presenter?.actionFinished(action, UnrealActionResult.Failure(exitCode))
-        presenter?.finish(UnrealPlanResult.Failure(action, exitCode))
+        presenter?.actionFinished(action, UnrealActionResult.Failure(exitCode, detail, command))
+        val result = UnrealPlanResult.Failure(action, exitCode, detail, command, cancelled)
+        presenter?.finish(result)
+        callbacks.workflowFailed(result)
         presenter = null
     }
+
+    private fun cancelQueuedLocked() {
+        queued.forEach { presenter?.actionFinished(it.action, UnrealActionResult.Cancelled) }
+        queued.clear()
+    }
+
+    private fun exceptionDetail(action: UnrealPlannedAction, exception: RuntimeException): String =
+        "${exception::class.simpleName}: ${exception.message.orEmpty()}\nAction: ${action.displayName()}"
 
     private fun cancelCurrentPresentationLocked() {
         if (state == UnrealPlanState.RUNNING || state == UnrealPlanState.STOPPING) {
@@ -266,10 +316,22 @@ class UnrealExecutionQueue(
         startLocked(replacement)
     }
 
-    private fun blockRestartLocked() {
+    private fun blockRestartLocked(message: String, awaitExternalRecovery: Boolean = false) {
         state = UnrealPlanState.RESTART_BLOCKED
+        restartAwaitingExternalRecovery = awaitExternalRecovery
         pendingReplacement = null
         pendingStopCompletion = null
+        callbacks.restartFailed(message)
+    }
+
+    private fun scheduleRestartTimeoutLocked(current: RunningAction) {
+        timeoutScheduler.schedule {
+            synchronized(lock) {
+                if (state == UnrealPlanState.STOPPING && running === current && !current.process.isProcessTerminated) {
+                    blockRestartLocked("Timed out waiting for ${current.action.displayName()} to stop")
+                }
+            }
+        }
     }
 
     private fun isActiveLocked(): Boolean =
