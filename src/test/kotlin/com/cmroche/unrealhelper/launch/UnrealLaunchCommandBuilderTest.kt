@@ -68,6 +68,32 @@ class UnrealLaunchCommandBuilderTest {
         assertEquals(listOf("-server", "-log"), command.parametersList.list)
     }
 
+    @Test
+    fun `project executable under engine checkout omits project argument`() {
+        val engineRoot = Path.of("/Workspace/UnrealEngine")
+        val projectRoot = engineRoot.resolve("Samples/Games/Lyra")
+        val projectPath = projectRoot.resolve("Lyra.uproject")
+        val executable = projectRoot.resolve("Binaries/Mac/Lyra")
+        val artifact = ResolvedLaunchArtifact(
+            receiptPath = projectRoot.resolve("Binaries/Mac/Lyra.target"),
+            executable = executable,
+            projectPath = projectPath,
+            workingDirectory = executable.parent,
+            engineRoot = engineRoot,
+        )
+
+        val command = UnrealLaunchCommandBuilder.build(
+            action = launch(
+                projectPath = projectPath,
+                entryArguments = "-game",
+                globalArguments = "-log",
+            ),
+            artifact = artifact,
+        )
+
+        assertEquals(listOf("-game", "-log"), command.parametersList.list)
+    }
+
     private fun launch(
         projectPath: Path,
         entryArguments: String,

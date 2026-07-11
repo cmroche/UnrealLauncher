@@ -8,7 +8,7 @@ internal object UnrealLaunchCommandBuilder {
     fun build(action: Launch, artifact: ResolvedLaunchArtifact): GeneralCommandLine {
         val command = GeneralCommandLine(artifact.executable.toString())
             .withWorkingDirectory(artifact.workingDirectory)
-        if (artifact.executable.startsWith(artifact.engineRoot) && artifact.projectPath != null) {
+        if (artifact.executable.startsWith(artifact.engineRoot.resolve("Engine")) && artifact.projectPath != null) {
             command.addParameter(artifact.projectPath.toString())
         }
         command.parametersList.addAll(parse(action.entryArguments) + parse(action.globalArguments))
