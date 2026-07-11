@@ -1,0 +1,164 @@
+package com.cmroche.unrealhelper.workflow
+
+import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
+import com.cmroche.unrealhelper.config.resolveConfigurationEntries
+import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
+import java.nio.file.Files
+import java.nio.file.InvalidPathException
+import java.nio.file.Path
+
+class UnrealWorkflowPreflightValidator(
+    private val plan: (
+        UnrealWorkflowRequest,
+        TargetPlatformConfiguration,
+        UnrealHelperSettingsState,
+        String?,
+    ) -> UnrealExecutionPlan = UnrealWorkflowPlanner()::plan,
+    private val osName: String = System.getProperty("os.name"),
+) {
+    fun validate(
+        request: UnrealWorkflowRequest,
+        configuration: TargetPlatformConfiguration,
+        state: UnrealHelperSettingsState,
+        projectBasePath: String?,
+    ): List<String> {
+        val errors = mutableListOf<String>()
+        val entryResolution = resolveConfigurationEntries(configuration, state)
+        errors += entryResolution.messages.map {
+            "Target & Platform configuration '${configuration.name}': $it"
+        }
+
+        val projectPath = resolveProjectPath(state.uprojectPath, projectBasePath)
+        when {
+            state.uprojectPath.isBlank() -> errors += "Project file is not configured"
+            projectPath == null -> errors += "Project file path is invalid: ${state.uprojectPath}"
+            !Files.isRegularFile(projectPath) -> errors += "Project file was not found at $projectPath"
+        }
+
+        val workspaceRoot = resolveWorkspaceRoot(state, projectPath, projectBasePath)
+        when {
+            workspaceRoot == null -> errors += "Workspace root is not configured"
+            !Files.isDirectory(workspaceRoot) -> errors += "Workspace root was not found at $workspaceRoot"
+        }
+
+        val engineRoot = pathOrNull(state.engineRoot)
+        when {
+            state.engineRoot.isBlank() -> errors += "Engine root is not configured"
+            engineRoot == null -> errors += "Engine root path is invalid: ${state.engineRoot}"
+            !Files.isDirectory(engineRoot) -> errors += "Engine root was not found at $engineRoot"
+        }
+
+        if (!entryResolution.isValid || workspaceRoot == null) return errors
+
+        val executionPlan = try {
+            plan(request, configuration, state, projectBasePath)
+        } catch (exception: IllegalArgumentException) {
+            errors += "Could not create workflow plan for configuration '${configuration.name}': ${exception.message}"
+            return errors
+        } catch (exception: IllegalStateException) {
+            errors += "Could not create workflow plan for configuration '${configuration.name}': ${exception.message}"
+            return errors
+        }
+
+        validatePlan(executionPlan, configuration.name, errors)
+        executionPlan.phases
+            .flatMap { it.actions }
+            .flatMap { it.artifacts }
+            .map { it.projectPath }
+            .distinct()
+            .filterNot(Files::isRegularFile)
+            .forEach { errors.addUnique("Project file was not found at $it") }
+
+        val environment = executionPlan.environment
+        if (!Files.isDirectory(environment.workspaceRoot)) {
+            errors.addUnique("Workspace root was not found at ${environment.workspaceRoot}")
+        }
+        if (!Files.isDirectory(environment.engineRoot)) {
+            errors.addUnique("Engine root was not found at ${environment.engineRoot}")
+        } else {
+            val phases = executionPlan.phases.map { it.phase }.toSet()
+            if (UnrealPhase.BUILD in phases) {
+                val ubtPath = unrealBuildToolPath(environment.engineRoot)
+                if (!Files.isRegularFile(ubtPath)) {
+                    errors += "UnrealBuildTool was not found at $ubtPath"
+                }
+            }
+            if (phases.any { it in UatPhases }) {
+                val uatPath = runUatPath(environment.engineRoot)
+                if (!Files.isRegularFile(uatPath)) {
+                    errors += "RunUAT was not found at $uatPath"
+                }
+            }
+        }
+        if (executionPlan.phases.any { it.phase == UnrealPhase.PACKAGE } &&
+            !Files.isDirectory(environment.packageDirectory)
+        ) {
+            errors += "Package destination was not found at ${environment.packageDirectory}"
+        }
+
+        return errors
+    }
+
+    private fun validatePlan(
+        executionPlan: UnrealExecutionPlan,
+        configurationName: String,
+        errors: MutableList<String>,
+    ) {
+        val phases = executionPlan.phases.map { it.phase }
+        if (phases.isEmpty()) {
+            errors += "Workflow plan for configuration '$configurationName' has no phases"
+        } else if (phases.zipWithNext().any { (first, second) -> first.ordinal >= second.ordinal }) {
+            errors += "Workflow plan for configuration '$configurationName' has invalid phase order: " +
+                phases.joinToString(", ")
+        }
+    }
+
+    private fun resolveProjectPath(uprojectPath: String, projectBasePath: String?): Path? {
+        val path = pathOrNull(uprojectPath) ?: return null
+        return when {
+            path.isAbsolute -> path.normalize()
+            !projectBasePath.isNullOrBlank() -> pathOrNull(projectBasePath)?.resolve(path)?.normalize()
+            else -> path.normalize()
+        }
+    }
+
+    private fun resolveWorkspaceRoot(
+        state: UnrealHelperSettingsState,
+        projectPath: Path?,
+        projectBasePath: String?,
+    ): Path? = when {
+        state.workspaceRoot.isNotBlank() -> pathOrNull(state.workspaceRoot)
+        projectPath?.parent != null -> projectPath.parent
+        !projectBasePath.isNullOrBlank() -> pathOrNull(projectBasePath)
+        else -> null
+    }
+
+    private fun unrealBuildToolPath(engineRoot: Path): Path = engineRoot
+        .resolve("Engine")
+        .resolve("Binaries")
+        .resolve("DotNET")
+        .resolve("UnrealBuildTool")
+        .resolve(if (isWindows()) "UnrealBuildTool.exe" else "UnrealBuildTool")
+
+    private fun runUatPath(engineRoot: Path): Path = engineRoot
+        .resolve("Engine")
+        .resolve("Build")
+        .resolve("BatchFiles")
+        .resolve(if (isWindows()) "RunUAT.bat" else "RunUAT.sh")
+
+    private fun isWindows(): Boolean = osName.startsWith("Windows", ignoreCase = true)
+
+    private fun pathOrNull(value: String): Path? = try {
+        value.takeIf(String::isNotBlank)?.let(Path::of)
+    } catch (_: InvalidPathException) {
+        null
+    }
+
+    private fun MutableList<String>.addUnique(message: String) {
+        if (message !in this) add(message)
+    }
+
+    private companion object {
+        val UatPhases = setOf(UnrealPhase.COOK, UnrealPhase.STAGE, UnrealPhase.PACKAGE)
+    }
+}

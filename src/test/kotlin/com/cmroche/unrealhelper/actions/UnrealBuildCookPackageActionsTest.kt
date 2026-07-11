@@ -22,7 +22,7 @@ class UnrealBuildCookPackageActionsTest {
         ).forEach { request ->
             val execution = RecordingExecution()
 
-            val error = UnrealWorkflowSubmitter(execution).submit(
+            val error = submitter(execution).submit(
                 request = request,
                 configuration = configuration(),
                 state = state(),
@@ -39,7 +39,10 @@ class UnrealBuildCookPackageActionsTest {
         val execution = RecordingExecution()
         val state = state().also { it.engineRoot = "" }
 
-        val error = UnrealWorkflowSubmitter(execution).submit(
+        val error = UnrealWorkflowSubmitter(
+            execution = execution,
+            preflight = { _, _, _, _ -> listOf("First problem", "Second problem") },
+        ).submit(
             request = UnrealWorkflowRequest.BUILD,
             configuration = configuration(),
             state = state,
@@ -47,7 +50,7 @@ class UnrealBuildCookPackageActionsTest {
         )
 
         assertEquals(
-            "Engine root is not configured; set it in Tools > UnrealHelper before running Build, Cook, or Package.",
+            "Target & Platform configuration 'Client' cannot run:\nFirst problem\nSecond problem",
             error,
         )
         assertEquals(emptyList<UnrealExecutionPlan>(), execution.started)
@@ -58,7 +61,7 @@ class UnrealBuildCookPackageActionsTest {
     fun `conflicting workflow is kept unless restart is explicitly confirmed`() {
         val execution = RecordingExecution(conflict = UnrealWorkflowConflict(listOf("Cook Lyra"), emptyList(), emptyList()))
 
-        val error = UnrealWorkflowSubmitter(execution, confirmRestart = { false }).submit(
+        val error = submitter(execution, confirmRestart = { false }).submit(
             request = UnrealWorkflowRequest.COOK,
             configuration = configuration(),
             state = state(),
@@ -75,7 +78,7 @@ class UnrealBuildCookPackageActionsTest {
         val conflict = UnrealWorkflowConflict(listOf("Cook Lyra"), emptyList(), emptyList())
         val execution = RecordingExecution(conflict)
 
-        val error = UnrealWorkflowSubmitter(execution, confirmRestart = { true }).submit(
+        val error = submitter(execution, confirmRestart = { true }).submit(
             request = UnrealWorkflowRequest.PACKAGE,
             configuration = configuration(),
             state = state(),
@@ -91,6 +94,15 @@ class UnrealBuildCookPackageActionsTest {
     private fun configuration() = TargetPlatformConfiguration(
         name = "Client",
         entries = listOf(TargetPlatformEntry(targetName = "LyraClient", platform = "Win64")),
+    )
+
+    private fun submitter(
+        execution: UnrealWorkflowExecution,
+        confirmRestart: (UnrealWorkflowConflict) -> Boolean = { false },
+    ) = UnrealWorkflowSubmitter(
+        execution = execution,
+        preflight = { _, _, _, _ -> emptyList() },
+        confirmRestart = confirmRestart,
     )
 
     private fun state() = UnrealHelperSettingsState().also { state ->

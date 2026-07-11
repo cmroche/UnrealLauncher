@@ -10,13 +10,13 @@ import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.ui.UnrealWorkflowConflictDialog
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPlanner
+import com.cmroche.unrealhelper.workflow.UnrealWorkflowPreflightValidator
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.DumbAware
-import java.nio.file.Path
 
 internal class UnrealBuildAction : UnrealWorkflowAction(UnrealWorkflowRequest.BUILD)
 
@@ -59,6 +59,12 @@ internal abstract class UnrealWorkflowAction(
 internal class UnrealWorkflowSubmitter(
     private val execution: UnrealWorkflowExecution,
     private val planner: UnrealWorkflowPlanner = UnrealWorkflowPlanner(),
+    private val preflight: (
+        UnrealWorkflowRequest,
+        TargetPlatformConfiguration,
+        UnrealHelperSettingsState,
+        String?,
+    ) -> List<String> = UnrealWorkflowPreflightValidator(plan = planner::plan)::validate,
     private val confirmRestart: (UnrealWorkflowConflict) -> Boolean = { false },
 ) {
     fun submit(
@@ -67,8 +73,8 @@ internal class UnrealWorkflowSubmitter(
         state: UnrealHelperSettingsState,
         projectBasePath: String?,
     ): String? {
-        val error = workflowValidationError(request, state, projectBasePath)
-        if (error != null) return error
+        val errors = preflight(request, configuration, state, projectBasePath)
+        UnrealActionMessages.preflightError(configuration.name, errors)?.let { return it }
 
         val plan = planner.plan(request, configuration, state, projectBasePath)
         val conflict = execution.conflictFor(plan)
@@ -82,33 +88,3 @@ internal class UnrealWorkflowSubmitter(
 }
 
 internal fun workflowActionEnabled(state: UnrealHelperSettingsState): Boolean = state.uprojectPath.isNotBlank()
-
-internal fun workflowValidationError(
-    request: UnrealWorkflowRequest,
-    state: UnrealHelperSettingsState,
-    projectBasePath: String?,
-): String? = when (request) {
-    UnrealWorkflowRequest.LAUNCH -> if (state.uprojectPath.isBlank()) ".uproject path is not configured" else null
-    UnrealWorkflowRequest.BUILD,
-    UnrealWorkflowRequest.COOK,
-    UnrealWorkflowRequest.PACKAGE,
-    -> buildCookPackageValidationError(state, projectBasePath)
-}
-
-internal fun buildCookPackageValidationError(
-    state: UnrealHelperSettingsState,
-    projectBasePath: String?,
-): String? = when {
-    state.uprojectPath.isBlank() -> ".uproject path is not configured"
-    state.engineRoot.isBlank() ->
-        "Engine root is not configured; set it in Tools > UnrealHelper before running Build, Cook, or Package."
-    workspaceRootPath(state, projectBasePath) == null -> "Workspace root is not configured"
-    else -> null
-}
-
-private fun workspaceRootPath(state: UnrealHelperSettingsState, projectBasePath: String?): Path? =
-    if (state.workspaceRoot.isNotBlank()) {
-        Path.of(state.workspaceRoot)
-    } else {
-        Path.of(state.uprojectPath).parent ?: projectBasePath?.takeIf { it.isNotBlank() }?.let(Path::of)
-    }

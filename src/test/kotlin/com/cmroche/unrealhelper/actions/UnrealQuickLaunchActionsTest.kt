@@ -2,6 +2,7 @@ package com.cmroche.unrealhelper.actions
 
 import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
 import com.cmroche.unrealhelper.config.TargetPlatformEntry
+import com.cmroche.unrealhelper.execution.UnrealWorkflowExecution
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
@@ -16,7 +17,7 @@ class UnrealQuickLaunchActionsTest {
         val execution = RecordingExecution()
         val state = state().also { it.packageDirectory = "" }
 
-        val error = UnrealWorkflowSubmitter(execution).submit(
+        val error = submitter(execution).submit(
             request = UnrealWorkflowRequest.LAUNCH,
             configuration = configuration(),
             state = state,
@@ -33,7 +34,7 @@ class UnrealQuickLaunchActionsTest {
     fun `launch waits for workflow execution instead of resolving a command immediately`() {
         val execution = RecordingExecution()
 
-        val error = UnrealWorkflowSubmitter(execution).submit(
+        val error = submitter(execution).submit(
             request = UnrealWorkflowRequest.LAUNCH,
             configuration = configuration(),
             state = state(),
@@ -69,6 +70,11 @@ class UnrealQuickLaunchActionsTest {
     private fun configuration() = TargetPlatformConfiguration(
         name = "Client",
         entries = listOf(TargetPlatformEntry(targetName = "LyraClient", platform = "Win64")),
+    )
+
+    private fun submitter(execution: UnrealWorkflowExecution) = UnrealWorkflowSubmitter(
+        execution = execution,
+        preflight = { _, _, _, _ -> emptyList() },
     )
 
     private fun state() = UnrealHelperSettingsState().also { state ->

@@ -29,4 +29,10 @@ internal object UnrealActionMessages {
             is SelectedTargetPlatformConfigurationResult.InvalidEntries ->
                 "Target & Platform configuration '${result.name}' cannot run:\n${result.messages.joinToString("\n")}"
         }
+
+    fun preflightError(configurationName: String, errors: List<String>): String? =
+        errors.takeIf { it.isNotEmpty() }?.joinToString(
+            separator = "\n",
+            prefix = "Target & Platform configuration '$configurationName' cannot run:\n",
+        )
 }
