@@ -8,7 +8,6 @@ data class UnrealCommandContext(
     val engineRoot: Path,
     val workspaceRoot: Path,
     val packageDirectory: Path,
-    val extraArguments: String,
 ) {
     val uprojectPath: Path
         get() = artifact.projectPath
@@ -25,27 +24,4 @@ data class UnrealCommandContext(
     val platform: String
         get() = artifact.platform
 
-    constructor(
-        uprojectPath: Path,
-        engineRoot: Path,
-        workspaceRoot: Path,
-        packageDirectory: Path,
-        buildConfiguration: String,
-        targetName: String,
-        targetType: String,
-        platform: String,
-        extraArguments: String,
-    ) : this(
-        artifact = UnrealArtifactKey(
-            projectPath = uprojectPath,
-            targetName = targetName,
-            targetType = targetType,
-            platform = platform,
-            buildConfiguration = buildConfiguration,
-        ),
-        engineRoot = engineRoot,
-        workspaceRoot = workspaceRoot,
-        packageDirectory = packageDirectory,
-        extraArguments = extraArguments,
-    )
 }

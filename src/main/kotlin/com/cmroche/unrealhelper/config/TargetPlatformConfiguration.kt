@@ -1,7 +1,6 @@
 package com.cmroche.unrealhelper.config
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 
 @Serializable
 data class TargetPlatformConfigurationsFile(
@@ -21,11 +20,8 @@ data class TargetPlatformConfiguration(
 
 @Serializable
 data class TargetPlatformEntry(
-    @Transient val targetType: String = "",
     val platform: String,
     val arguments: String = "",
-    @Transient val executablePath: String = "",
-    @Transient val workingDirectory: String = "",
     val targetName: String = "",
     val cookOnLaunch: Boolean = false,
     val incrementalCookOnLaunch: Boolean = false,

@@ -64,41 +64,6 @@ class TargetPlatformConfigurationServiceTest {
     }
 
     @Test
-    fun `managed save discards compatibility path fields`() {
-        val settings = settingsWithWorkspaceRoot()
-        val workspaceRoot = temp.root.toPath()
-        val executable = workspaceRoot.resolve("Packages/Windows/MyGame.exe")
-        val workingDirectory = workspaceRoot.resolve("Saved/Launch")
-        val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
-
-        service.saveManagedConfigurations(
-            TargetPlatformConfigurationsFile(
-                configurations = listOf(
-                    TargetPlatformConfiguration(
-                        "Game Win64",
-                        listOf(
-                            TargetPlatformEntry(
-                                targetType = "Game",
-                                platform = "Win64",
-                                executablePath = executable.toString(),
-                                workingDirectory = workingDirectory.toString(),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            dialogSelectedName = "Game Win64",
-        )
-
-        val result = service.load()
-        assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
-        result as TargetPlatformConfigurationLoadResult.Loaded
-        val entry = result.file.configurations.single().entries.single()
-        assertEquals("", entry.executablePath)
-        assertEquals("", entry.workingDirectory)
-    }
-
-    @Test
     fun `legacy selected targets migrate to default shared config when file is missing`() {
         val settings = settingsWithWorkspaceRoot().also {
             it.state.selectedTargetTypes = mutableListOf("Game", "Server")
@@ -130,8 +95,6 @@ class TargetPlatformConfigurationServiceTest {
         assertEquals(listOf("Win64", "Win64"), configuration.entries.map { it.platform })
         val serverEntry = configuration.entries.single { it.targetName == "LyraServer" }
         assertEquals("-log -server", serverEntry.arguments)
-        assertEquals("", serverEntry.executablePath)
-        assertEquals("", serverEntry.workingDirectory)
         assertFalse(serverEntry.cookOnLaunch)
         assertFalse(serverEntry.incrementalCookOnLaunch)
         assertEquals("Default", settings.state.selectedTargetPlatformConfigurationName)

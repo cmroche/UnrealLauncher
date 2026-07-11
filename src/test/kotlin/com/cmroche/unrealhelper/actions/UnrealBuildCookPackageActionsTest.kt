@@ -1,267 +1,128 @@
 package com.cmroche.unrealhelper.actions
 
-import com.cmroche.unrealhelper.command.UnrealCommandBuilder
 import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
 import com.cmroche.unrealhelper.config.TargetPlatformEntry
-import com.cmroche.unrealhelper.settings.UnrealHelperSettings
+import com.cmroche.unrealhelper.execution.UnrealWorkflowConflict
+import com.cmroche.unrealhelper.execution.UnrealWorkflowExecution
+import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
+import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
+import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class UnrealBuildCookPackageActionsTest {
     @Test
-    fun `selected target type uses discovered target names with matching type`() {
-        val targets = resolveUnrealCommandTargets(
-            uprojectPath = "/Workspace/MyGame/MyGame.uproject",
-            selectedTargetTypes = listOf("Game", "Server"),
-            discoveredTargets = listOf(
-                target("MyGameEditor", "Game"),
-                target("MyGameClient", "Client"),
-                target("MyGameServer", "Server"),
-            ),
-        )
+    fun `build cook and package submit matching workflow requests`() {
+        listOf(
+            UnrealWorkflowRequest.BUILD,
+            UnrealWorkflowRequest.COOK,
+            UnrealWorkflowRequest.PACKAGE,
+        ).forEach { request ->
+            val execution = RecordingExecution()
 
-        assertEquals(
-            listOf(
-                UnrealResolvedCommandTarget("MyGameEditor", "Game"),
-                UnrealResolvedCommandTarget("MyGameServer", "Server"),
-            ),
-            targets,
-        )
+            val error = UnrealWorkflowSubmitter(execution).submit(
+                request = request,
+                configuration = configuration(),
+                state = state(),
+                projectBasePath = "/Workspace/Lyra",
+            )
+
+            assertNull(error)
+            assertEquals(request, execution.started.single().request)
+        }
     }
 
     @Test
-    fun `selected target type falls back to uproject basename when no discovered target matches`() {
-        val targets = resolveUnrealCommandTargets(
-            uprojectPath = "/Workspace/ShooterGame/ShooterGame.uproject",
-            selectedTargetTypes = listOf("Client"),
-            discoveredTargets = listOf(target("ShooterGameEditor", "Game")),
+    fun `validation error prevents workflow submission`() {
+        val execution = RecordingExecution()
+        val state = state().also { it.engineRoot = "" }
+
+        val error = UnrealWorkflowSubmitter(execution).submit(
+            request = UnrealWorkflowRequest.BUILD,
+            configuration = configuration(),
+            state = state,
+            projectBasePath = "/Workspace/Lyra",
         )
-
-        assertEquals(listOf(UnrealResolvedCommandTarget("ShooterGame", "Client")), targets)
-    }
-
-    @Test
-    fun `command contexts come from selected target platform configuration`() {
-        val settings = settings()
-        settings.state.discoveredTargets = mutableListOf(
-            target("MyGameClient", "Client"),
-            target("MyGameServer", "Server"),
-        )
-        val configuration = TargetPlatformConfiguration(
-            name = "Client and Server",
-            entries = listOf(
-                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
-                TargetPlatformEntry(targetType = "Server", platform = "Linux"),
-            ),
-        )
-
-        val contexts = createUnrealCommandContexts(settings, configuration)
-
-        assertEquals(2, contexts.size)
-        assertEquals("MyGameClient", contexts[0].targetName)
-        assertEquals("Client", contexts[0].targetType)
-        assertEquals("Win64", contexts[0].platform)
-        assertEquals("MyGameServer", contexts[1].targetName)
-        assertEquals("Server", contexts[1].targetType)
-        assertEquals("Linux", contexts[1].platform)
-        assertEquals("/Workspace/MyGame/MyGame.uproject", contexts[0].uprojectPath.toString())
-        assertEquals("/Engines/UE_5.6", contexts[0].engineRoot.toString())
-        assertEquals("/Workspace/MyGame", contexts[0].workspaceRoot.toString())
-        assertEquals("/Artifacts/MyGame", contexts[0].packageDirectory.toString())
-        assertEquals("Shipping", contexts[0].buildConfiguration)
-        assertEquals("-log", contexts[0].extraArguments)
-    }
-
-    @Test
-    fun `build commands preserve repeated target platform configuration entries`() {
-        val settings = settings()
-        settings.state.discoveredTargets = mutableListOf(target("MyGameClient", "Client"))
-        val configuration = TargetPlatformConfiguration(
-            name = "Three Clients",
-            entries = listOf(
-                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
-                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
-                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
-            ),
-        )
-
-        val commands = createUnrealCommands(
-            settings = settings,
-            configuration = configuration,
-            commandFactory = { UnrealCommandBuilder.build(it) },
-            deduplicate = false,
-        )
-
-        assertEquals(3, commands.size)
-        assertEquals(
-            listOf(
-                "Unreal Build MyGameClient Client Win64",
-                "Unreal Build MyGameClient Client Win64",
-                "Unreal Build MyGameClient Client Win64",
-            ),
-            commands.map { it.title },
-        )
-    }
-
-    @Test
-    fun `build commands are emitted for every selected target platform configuration entry`() {
-        val settings = settings()
-        settings.state.discoveredTargets = mutableListOf(
-            target("MyGameEditor", "Game"),
-            target("MyGameClient", "Client"),
-        )
-        val configuration = TargetPlatformConfiguration(
-            name = "Build Targets",
-            entries = listOf(
-                TargetPlatformEntry(targetType = "Game", platform = "Win64"),
-                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
-            ),
-        )
-
-        val commands = createUnrealCommands(
-            settings = settings,
-            configuration = configuration,
-            commandFactory = { UnrealCommandBuilder.build(it) },
-            deduplicate = false,
-        )
-
-        assertEquals(2, commands.size)
-        assertEquals("Unreal Build MyGameEditor Game Win64", commands[0].title)
-        assertEquals("Unreal Build MyGameClient Client Win64", commands[1].title)
-    }
-
-    @Test
-    fun `cook commands are deduplicated when configuration entries generate identical command lines`() {
-        val settings = settings()
-        settings.state.discoveredTargets = mutableListOf(
-            target("MyGameEditor", "Game"),
-            target("MyGameClient", "Client"),
-        )
-        val configuration = TargetPlatformConfiguration(
-            name = "Cook Targets",
-            entries = listOf(
-                TargetPlatformEntry(targetType = "Game", platform = "Win64"),
-                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
-            ),
-        )
-
-        val commands = createUnrealCommands(
-            settings = settings,
-            configuration = configuration,
-            commandFactory = { UnrealCommandBuilder.cook(it) },
-            deduplicate = true,
-        )
-
-        assertEquals(1, commands.size)
-        assertEquals("Unreal Cook MyGameEditor Game Win64", commands.single().title)
-    }
-
-    @Test
-    fun `package commands preserve distinct exact targets`() {
-        val settings = settings()
-        settings.state.discoveredTargets = mutableListOf(
-            target("MyGameEditor", "Game"),
-            target("MyGameClient", "Client"),
-        )
-        val configuration = TargetPlatformConfiguration(
-            name = "Package Targets",
-            entries = listOf(
-                TargetPlatformEntry(targetType = "Game", platform = "Win64"),
-                TargetPlatformEntry(targetType = "Client", platform = "Win64"),
-            ),
-        )
-
-        val commands = createUnrealCommands(
-            settings = settings,
-            configuration = configuration,
-            commandFactory = { UnrealCommandBuilder.packageProject(it) },
-            deduplicate = true,
-        )
-
-        assertEquals(2, commands.size)
-        assertEquals(
-            listOf(
-                "Unreal Package MyGameEditor Game Win64",
-                "Unreal Package MyGameClient Client Win64",
-            ),
-            commands.map { it.title },
-        )
-    }
-
-    @Test
-    fun `basename-only uproject path uses project base path as workspace fallback`() {
-        val settings = settings()
-        settings.state.uprojectPath = "MyGame.uproject"
-        settings.state.workspaceRoot = ""
-        val configuration = TargetPlatformConfiguration(
-            name = "Default",
-            entries = listOf(TargetPlatformEntry(targetType = "Game", platform = "Win64")),
-        )
-
-        val contexts = createUnrealCommandContexts(settings, configuration, projectBasePath = "/Workspace/MyGame")
-
-        assertEquals("/Workspace/MyGame", contexts.single().workspaceRoot.toString())
-    }
-
-    @Test
-    fun `basename-only uproject path without project base path reports missing workspace root`() {
-        val settings = settings()
-        settings.state.uprojectPath = "MyGame.uproject"
-        settings.state.workspaceRoot = ""
-
-        assertEquals(
-            "Workspace root is not configured",
-            buildCookPackageValidationError(settings.state, projectBasePath = null),
-        )
-    }
-
-    @Test
-    fun `missing engine root reports settings-specific validation message`() {
-        val settings = settings()
-        settings.state.engineRoot = ""
 
         assertEquals(
             "Engine root is not configured; set it in Tools > UnrealHelper before running Build, Cook, or Package.",
-            buildCookPackageValidationError(settings.state, projectBasePath = "/Workspace/MyGame"),
+            error,
+        )
+        assertEquals(emptyList<UnrealExecutionPlan>(), execution.started)
+        assertEquals(emptyList<UnrealExecutionPlan>(), execution.restarted)
+    }
+
+    @Test
+    fun `conflicting workflow is kept unless restart is explicitly confirmed`() {
+        val execution = RecordingExecution(conflict = UnrealWorkflowConflict(listOf("Cook Lyra"), emptyList(), emptyList()))
+
+        val error = UnrealWorkflowSubmitter(execution, confirmRestart = { false }).submit(
+            request = UnrealWorkflowRequest.COOK,
+            configuration = configuration(),
+            state = state(),
+            projectBasePath = "/Workspace/Lyra",
+        )
+
+        assertNull(error)
+        assertEquals(emptyList<UnrealExecutionPlan>(), execution.started)
+        assertEquals(emptyList<UnrealExecutionPlan>(), execution.restarted)
+    }
+
+    @Test
+    fun `explicit restart confirmation replaces conflicting workflow`() {
+        val conflict = UnrealWorkflowConflict(listOf("Cook Lyra"), emptyList(), emptyList())
+        val execution = RecordingExecution(conflict)
+
+        val error = UnrealWorkflowSubmitter(execution, confirmRestart = { true }).submit(
+            request = UnrealWorkflowRequest.PACKAGE,
+            configuration = configuration(),
+            state = state(),
+            projectBasePath = "/Workspace/Lyra",
+        )
+
+        assertNull(error)
+        assertEquals(emptyList<UnrealExecutionPlan>(), execution.started)
+        assertEquals(UnrealWorkflowRequest.PACKAGE, execution.restarted.single().request)
+        assertEquals(conflict, execution.restartConflicts.single())
+    }
+
+    private fun configuration() = TargetPlatformConfiguration(
+        name = "Client",
+        entries = listOf(TargetPlatformEntry(targetName = "LyraClient", platform = "Win64")),
+    )
+
+    private fun state() = UnrealHelperSettingsState().also { state ->
+        state.uprojectPath = "/Workspace/Lyra/Lyra.uproject"
+        state.workspaceRoot = "/Workspace/Lyra"
+        state.engineRoot = "/Engines/UE_5.6"
+        state.packageDirectory = "/Artifacts/Lyra"
+        state.discoveredPlatforms = mutableListOf("Win64")
+        state.discoveredTargets = mutableListOf(
+            UnrealTargetState().also {
+                it.name = "LyraClient"
+                it.type = "Client"
+            },
         )
     }
+}
 
-    @Test
-    fun `toolbar action is enabled without engine root so execution can report validation error`() {
-        val settings = settings()
-        settings.state.engineRoot = ""
+internal class RecordingExecution(
+    var conflict: UnrealWorkflowConflict? = null,
+) : UnrealWorkflowExecution {
+    val started = mutableListOf<UnrealExecutionPlan>()
+    val restarted = mutableListOf<UnrealExecutionPlan>()
+    val restartConflicts = mutableListOf<UnrealWorkflowConflict>()
 
-        assertTrue(buildCookPackageActionEnabled(settings.state))
+    override fun conflictFor(plan: UnrealExecutionPlan): UnrealWorkflowConflict? = conflict
+
+    override fun start(plan: UnrealExecutionPlan) {
+        started += plan
     }
 
-    @Test
-    fun `toolbar action is disabled only until uproject is configured`() {
-        val settings = settings()
-
-        settings.state.uprojectPath = ""
-        assertFalse(buildCookPackageActionEnabled(settings.state))
-
-        settings.state.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
-        assertTrue(buildCookPackageActionEnabled(settings.state))
+    override fun stopAndRestart(plan: UnrealExecutionPlan, conflict: UnrealWorkflowConflict) {
+        restarted += plan
+        restartConflicts += conflict
     }
-
-    private fun settings(): UnrealHelperSettings =
-        UnrealHelperSettings().also {
-            it.state.uprojectPath = "/Workspace/MyGame/MyGame.uproject"
-            it.state.workspaceRoot = "/Workspace/MyGame"
-            it.state.engineRoot = "/Engines/UE_5.6"
-            it.state.packageDirectory = "/Artifacts/MyGame"
-            it.state.buildConfiguration = "Shipping"
-            it.state.activeCommandLine = "-log"
-        }
-
-    private fun target(name: String, type: String): UnrealTargetState =
-        UnrealTargetState().also {
-            it.name = name
-            it.type = type
-            it.path = "Source/$name.Target.cs"
-        }
 }

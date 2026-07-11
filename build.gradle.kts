@@ -28,7 +28,6 @@ dependencies {
         }
         bundledPlugin("com.intellij.cidr.debugger")
         bundledPlugin("com.jetbrains.rider-cpp")
-        bundledPlugin("org.jetbrains.plugins.terminal")
         bundledModule("intellij.cidr.execution")
         bundledModule("intellij.cidr.projectModel")
         testFramework(TestFrameworkType.Platform)

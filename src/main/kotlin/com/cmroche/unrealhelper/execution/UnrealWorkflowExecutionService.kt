@@ -4,9 +4,13 @@ import com.cmroche.unrealhelper.launch.QuickLaunchProcessService
 import com.cmroche.unrealhelper.launch.QuickLaunchStopResult
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.launch.RunningLaunchInfo
+import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.workflow.Launch
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.intellij.execution.process.ProcessOutputType
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
+import com.intellij.openapi.project.Project
 
 data class UnrealWorkflowConflict(
     val runningActions: List<String>,
@@ -14,15 +18,32 @@ data class UnrealWorkflowConflict(
     val launchedProcesses: List<RunningLaunchInfo>,
 )
 
-class UnrealWorkflowExecutionService(
+interface UnrealWorkflowExecution {
+    fun conflictFor(plan: UnrealExecutionPlan): UnrealWorkflowConflict?
+
+    fun start(plan: UnrealExecutionPlan)
+
+    fun stopAndRestart(plan: UnrealExecutionPlan, conflict: UnrealWorkflowConflict)
+}
+
+@Service(Service.Level.PROJECT)
+class UnrealWorkflowExecutionService private constructor(
     private val queue: UnrealExecutionQueue,
     private val launchService: QuickLaunchProcessService,
-) : UnrealExecutionQueueCallbacks {
+) : UnrealExecutionQueueCallbacks, UnrealWorkflowExecution {
+    constructor(project: Project) : this(
+        queue = UnrealExecutionQueue(
+            executor = RiderUnrealPlannedActionExecutor(project, project.service<UnrealHelperSettings>()),
+            presenterFactory = { UnrealWorkflowPresenter.create(project) },
+        ),
+        launchService = project.service<QuickLaunchProcessService>(),
+    )
+
     init {
         queue.setCallbacks(this)
     }
 
-    fun conflictFor(plan: UnrealExecutionPlan): UnrealWorkflowConflict? {
+    override fun conflictFor(plan: UnrealExecutionPlan): UnrealWorkflowConflict? {
         val snapshot = queue.snapshot()
         val planArtifacts = plan.phases
             .flatMap { it.actions }
@@ -36,11 +57,11 @@ class UnrealWorkflowExecutionService(
         ).takeIf { snapshot.isActive || conflictingLaunches.isNotEmpty() }
     }
 
-    fun start(plan: UnrealExecutionPlan) {
+    override fun start(plan: UnrealExecutionPlan) {
         queue.start(plan)
     }
 
-    fun stopAndRestart(plan: UnrealExecutionPlan, conflict: UnrealWorkflowConflict) {
+    override fun stopAndRestart(plan: UnrealExecutionPlan, conflict: UnrealWorkflowConflict) {
         val barrier = CompletionBarrier(
             parties = 2,
             completed = { queue.start(plan) },
@@ -107,5 +128,12 @@ class UnrealWorkflowExecutionService(
             }
             completion?.invoke()
         }
+    }
+
+    companion object {
+        internal fun createForTest(
+            queue: UnrealExecutionQueue,
+            launchService: QuickLaunchProcessService,
+        ): UnrealWorkflowExecutionService = UnrealWorkflowExecutionService(queue, launchService)
     }
 }

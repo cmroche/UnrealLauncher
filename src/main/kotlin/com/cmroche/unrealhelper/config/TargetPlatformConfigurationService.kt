@@ -46,7 +46,7 @@ class TargetPlatformConfigurationService private constructor(
 
     fun save(file: TargetPlatformConfigurationsFile) {
         val path = configurationPath() ?: error(MissingWorkspaceRootMessage)
-        store.save(path, file.withProjectRelativePaths(ProjectRelativePaths.projectRoot(settings.state)))
+        store.save(path, file)
     }
 
     fun saveManagedConfigurations(
@@ -55,7 +55,6 @@ class TargetPlatformConfigurationService private constructor(
     ) {
         val previousSelectedName = settings.state.selectedTargetPlatformConfigurationName
         val normalizedFile = file.normalized()
-            .withProjectRelativePaths(ProjectRelativePaths.projectRoot(settings.state))
         save(normalizedFile)
         settings.state.selectedTargetPlatformConfigurationName = selectedNameAfterManagedSave(
             previousSelectedName = previousSelectedName,

@@ -208,7 +208,7 @@ class UnrealWorkflowExecutionServiceTest {
         val launchFactory = FakeLaunchFactory()
         val launchService = QuickLaunchProcessService.createForTest(launchFactory)
         return Fixture(
-            service = UnrealWorkflowExecutionService(queue, launchService),
+            service = UnrealWorkflowExecutionService.createForTest(queue, launchService),
             queue = queue,
             executor = executor,
             launchService = launchService,

@@ -7,6 +7,9 @@ import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.process.ProcessOutputType
 import com.intellij.openapi.util.Key
+import com.intellij.execution.RunContentExecutor
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Computable
 
 interface UnrealWorkflowProcessListener {
     fun started()
@@ -34,6 +37,9 @@ object UnrealWorkflowProcessFactory {
                     .withWorkDirectory(command.workingDirectory),
             ),
         )
+
+    fun createLaunch(project: Project, commandLine: GeneralCommandLine, title: String): UnrealWorkflowProcess =
+        RiderRunUnrealWorkflowProcess(project, OSProcessHandler(commandLine), title)
 }
 
 private class RiderUnrealWorkflowProcess(
@@ -70,3 +76,47 @@ private class RiderUnrealWorkflowProcess(
         }
     }
 }
+
+private class RiderRunUnrealWorkflowProcess(
+    private val project: Project,
+    private val handler: OSProcessHandler,
+    private val title: String,
+) : UnrealWorkflowProcess {
+    override val isProcessTerminating: Boolean
+        get() = handler.isProcessTerminating
+
+    override val isProcessTerminated: Boolean
+        get() = handler.isProcessTerminated
+
+    override fun start(listener: UnrealWorkflowProcessListener) {
+        handler.addProcessListener(listener.asProcessListener())
+        RunContentExecutor(project, handler)
+            .withTitle(title)
+            .withStop(Runnable(::destroy), Computable(::canStop))
+            .withActivateToolWindow(true)
+            .withFocusToolWindow(true)
+            .run()
+    }
+
+    override fun destroy() {
+        if (!handler.isStartNotified) handler.startNotify()
+        if (canStop()) handler.destroyProcess()
+    }
+
+    private fun canStop(): Boolean = !handler.isProcessTerminated && !handler.isProcessTerminating
+}
+
+private fun UnrealWorkflowProcessListener.asProcessListener(): ProcessListener =
+    object : ProcessListener {
+        override fun startNotified(event: ProcessEvent) {
+            started()
+        }
+
+        override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
+            output(event.text, ProcessOutputType.fromKey(outputType))
+        }
+
+        override fun processTerminated(event: ProcessEvent) {
+            terminated(event.exitCode)
+        }
+    }

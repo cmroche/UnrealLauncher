@@ -55,8 +55,6 @@ class TargetPlatformConfigurationStoreTest {
         assertEquals("LyraClient", entry.targetName)
         assertEquals("Win64", entry.platform)
         assertEquals("-log", entry.arguments)
-        assertEquals("", entry.executablePath)
-        assertEquals("", entry.workingDirectory)
         assertFalse(entry.cookOnLaunch)
         assertFalse(entry.incrementalCookOnLaunch)
     }

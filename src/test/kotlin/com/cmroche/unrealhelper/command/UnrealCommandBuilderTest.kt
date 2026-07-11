@@ -3,7 +3,6 @@ package com.cmroche.unrealhelper.command
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Path
@@ -43,7 +42,7 @@ class UnrealCommandBuilderTest {
     @Test
     fun `cook targets the artifact and skips every other phase`() {
         val command = UnrealCommandBuilder.cook(
-            context(targetName = "LyraClient", targetType = "Client", extraArguments = "-game -log"),
+            context(targetName = "LyraClient", targetType = "Client"),
             UnrealCookMode.FULL,
         )
 
@@ -65,8 +64,6 @@ class UnrealCommandBuilderTest {
             ),
             command.arguments,
         )
-        assertFalse(command.arguments.contains("-game"))
-        assertFalse(command.arguments.contains("-log"))
     }
 
     @Test
@@ -79,7 +76,7 @@ class UnrealCommandBuilderTest {
     @Test
     fun `server stage uses server role and skips completed prerequisites`() {
         val command = UnrealCommandBuilder.stage(
-            context(targetName = "LyraServer", targetType = "Server", extraArguments = "-log"),
+            context(targetName = "LyraServer", targetType = "Server"),
         )
 
         assertEquals("Unreal Stage LyraServer Server Win64", command.title)
@@ -111,7 +108,6 @@ class UnrealCommandBuilderTest {
                 targetType = "Client",
                 packageDirectory = Path.of("/Artifacts/Lyra"),
                 buildConfiguration = "Shipping",
-                extraArguments = "-log",
             ),
         )
 
@@ -138,7 +134,7 @@ class UnrealCommandBuilderTest {
     }
 
     @Test
-    fun `artifact context exposes compatibility target getters`() {
+    fun `artifact context exposes target getters`() {
         val context = context(targetName = "LyraServer", targetType = "Server", platform = "Linux")
 
         assertEquals(Path.of("/Workspace/Lyra/Lyra.uproject"), context.uprojectPath)
@@ -146,51 +142,6 @@ class UnrealCommandBuilderTest {
         assertEquals("Server", context.targetType)
         assertEquals("Linux", context.platform)
         assertEquals("Development", context.buildConfiguration)
-    }
-
-    @Test
-    fun `legacy build command remains source compatible`() {
-        val command = UnrealCommandBuilder.build(legacyContext(extraArguments = "-ExecCmds=\"stat fps\" -log"))
-
-        assertEquals(
-            listOf("-ExecCmds=stat fps", "-log"),
-            command.arguments.takeLast(2),
-        )
-    }
-
-    @Test
-    fun `legacy cook command preserves whitespace inside quoted arguments`() {
-        val command = UnrealCommandBuilder.cook(legacyContext(extraArguments = "-ExecCmds=\" stat fps \""))
-
-        assertEquals("-ExecCmds= stat fps ", command.arguments.last())
-    }
-
-    @Test
-    fun `legacy build shell line quotes project paths with spaces`() {
-        val command = UnrealCommandBuilder.build(
-            legacyContext(
-                uprojectPath = Path.of("/Workspace/Lyra Game/Lyra Game.uproject"),
-                engineRoot = Path.of("/Engines/Epic Games/UE_5.6"),
-            ),
-        )
-
-        assertEquals(
-            "'/Engines/Epic Games/UE_5.6/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool' " +
-                "LyraGame Win64 Development '-Project=/Workspace/Lyra Game/Lyra Game.uproject' -WaitMutex",
-            command.shellLine(),
-        )
-    }
-
-    @Test
-    fun `legacy build shell line escapes quotes in global arguments`() {
-        val command = UnrealCommandBuilder.build(legacyContext(extraArguments = "-ExecCmds=\"stat 'fps'\""))
-
-        assertEquals(
-            "/Engines/UE_5.6/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool " +
-                "LyraGame Win64 Development -Project=/Workspace/Lyra/Lyra.uproject -WaitMutex " +
-                "'-ExecCmds=stat '\\''fps'\\'''",
-            command.shellLine(),
-        )
     }
 
     @Test
@@ -214,7 +165,6 @@ class UnrealCommandBuilderTest {
         targetName: String = "LyraGame",
         targetType: String = "Game",
         platform: String = "Win64",
-        extraArguments: String = "",
     ): UnrealCommandContext =
         UnrealCommandContext(
             artifact = UnrealArtifactKey(
@@ -227,29 +177,5 @@ class UnrealCommandBuilderTest {
             engineRoot = engineRoot,
             workspaceRoot = workspaceRoot,
             packageDirectory = packageDirectory,
-            extraArguments = extraArguments,
-        )
-
-    private fun legacyContext(
-        uprojectPath: Path = Path.of("/Workspace/Lyra/Lyra.uproject"),
-        engineRoot: Path = Path.of("/Engines/UE_5.6"),
-        workspaceRoot: Path = Path.of("/Workspace/Lyra"),
-        packageDirectory: Path = Path.of("/Workspace/Lyra/Packages"),
-        buildConfiguration: String = "Development",
-        targetName: String = "LyraGame",
-        targetType: String = "Game",
-        platform: String = "Win64",
-        extraArguments: String = "",
-    ): UnrealCommandContext =
-        UnrealCommandContext(
-            uprojectPath = uprojectPath,
-            engineRoot = engineRoot,
-            workspaceRoot = workspaceRoot,
-            packageDirectory = packageDirectory,
-            buildConfiguration = buildConfiguration,
-            targetName = targetName,
-            targetType = targetType,
-            platform = platform,
-            extraArguments = extraArguments,
         )
 }
