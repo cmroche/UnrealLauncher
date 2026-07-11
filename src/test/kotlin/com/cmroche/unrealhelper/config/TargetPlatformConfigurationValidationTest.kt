@@ -60,28 +60,94 @@ class TargetPlatformConfigurationValidationTest {
     }
 
     @Test
-    fun `unsupported target and platform entries are reported with one based entry index`() {
-        val result = resolveSelectedTargetPlatformConfiguration(
-            loadResult = TargetPlatformConfigurationLoadResult.Loaded(
-                Path.of("/Project/.unrealhelper/target-platforms.json"),
-                TargetPlatformConfigurationsFile(
-                    configurations = listOf(
-                        TargetPlatformConfiguration(
-                            name = "Bad Config",
-                            entries = listOf(
-                                TargetPlatformEntry(targetType = "Server", platform = "Android"),
-                            ),
-                        ),
-                    ),
-                ),
-                1L,
+    fun `missing exact build target is invalid`() {
+        assertInvalid(
+            entry = TargetPlatformEntry(targetName = "MissingTarget", platform = "Win64"),
+            expectedMessage = "Entry 1 MissingTarget / Win64: build target is not discovered",
+        )
+    }
+
+    @Test
+    fun `incremental cook without cook is invalid`() {
+        assertInvalid(
+            entry = TargetPlatformEntry(
+                targetName = "LyraClient",
+                platform = "Win64",
+                cookOnLaunch = false,
+                incrementalCookOnLaunch = true,
             ),
-            selectedName = "Bad Config",
-            state = state(),
+            expectedMessage = "Entry 1 LyraClient / Win64: incremental cook requires Cook",
+        )
+    }
+
+    @Test
+    fun `missing platform retains one based entry index`() {
+        val result = selectedConfigurationResult(
+            entries = listOf(
+                TargetPlatformEntry(targetName = "LyraClient", platform = "Win64"),
+                TargetPlatformEntry(targetName = "LyraClient", platform = "Android"),
+            ),
         )
 
         val invalid = result as SelectedTargetPlatformConfigurationResult.InvalidEntries
-        assertEquals(listOf("Entry 1 Server / Android: target type is not discovered; platform is not discovered"), invalid.messages)
+        assertEquals(listOf("Entry 2 LyraClient / Android: platform is not discovered"), invalid.messages)
+    }
+
+    @Test
+    fun `exact build target resolves with inferred target type`() {
+        val result = resolveConfigurationEntries(
+            configuration = TargetPlatformConfiguration(
+                name = "Client Win64",
+                entries = listOf(
+                    TargetPlatformEntry(
+                        targetName = "LyraClient",
+                        platform = "Win64",
+                        arguments = "-log",
+                        cookOnLaunch = true,
+                        incrementalCookOnLaunch = true,
+                    ),
+                ),
+            ),
+            state = state(),
+        )
+
+        assertEquals(emptyList<String>(), result.messages)
+        assertEquals(
+            listOf(
+                ResolvedTargetPlatformEntry(
+                    index = 0,
+                    targetName = "LyraClient",
+                    targetType = "Client",
+                    platform = "Win64",
+                    arguments = "-log",
+                    cookOnLaunch = true,
+                    incrementalCookOnLaunch = true,
+                ),
+            ),
+            result.entries,
+        )
+    }
+
+    @Test
+    fun `all invalid row messages are returned together`() {
+        val result = selectedConfigurationResult(
+            entries = listOf(
+                TargetPlatformEntry(targetName = "MissingTarget", platform = "Win64"),
+                TargetPlatformEntry(
+                    targetName = "LyraClient",
+                    platform = "Android",
+                    incrementalCookOnLaunch = true,
+                ),
+            ),
+        ) as SelectedTargetPlatformConfigurationResult.InvalidEntries
+
+        assertEquals(
+            listOf(
+                "Entry 1 MissingTarget / Win64: build target is not discovered",
+                "Entry 2 LyraClient / Android: platform is not discovered; incremental cook requires Cook",
+            ),
+            result.messages,
+        )
     }
 
     @Test
@@ -93,7 +159,7 @@ class TargetPlatformConfigurationValidationTest {
                     configurations = listOf(
                         TargetPlatformConfiguration(
                             name = "Game Win64",
-                            entries = listOf(TargetPlatformEntry(targetType = "Game", platform = "Win64")),
+                            entries = listOf(TargetPlatformEntry(targetName = "LyraClient", platform = "Win64")),
                         ),
                     ),
                 ),
@@ -109,9 +175,30 @@ class TargetPlatformConfigurationValidationTest {
     private fun state(): UnrealHelperSettingsState =
         UnrealHelperSettingsState().also {
             it.discoveredTargets = mutableListOf(UnrealTargetState().also { target ->
-                target.name = "MyGame"
-                target.type = "Game"
+                target.name = "LyraClient"
+                target.type = "Client"
             })
             it.discoveredPlatforms = mutableListOf("Win64")
         }
+
+    private fun assertInvalid(entry: TargetPlatformEntry, expectedMessage: String) {
+        val result = selectedConfigurationResult(listOf(entry))
+        val invalid = result as SelectedTargetPlatformConfigurationResult.InvalidEntries
+        assertEquals(listOf(expectedMessage), invalid.messages)
+    }
+
+    private fun selectedConfigurationResult(
+        entries: List<TargetPlatformEntry>,
+    ): SelectedTargetPlatformConfigurationResult =
+        resolveSelectedTargetPlatformConfiguration(
+            loadResult = TargetPlatformConfigurationLoadResult.Loaded(
+                Path.of("/Project/.unrealhelper/target-platforms.json"),
+                TargetPlatformConfigurationsFile(
+                    configurations = listOf(TargetPlatformConfiguration("Test Config", entries)),
+                ),
+                1L,
+            ),
+            selectedName = "Test Config",
+            state = state(),
+        )
 }
