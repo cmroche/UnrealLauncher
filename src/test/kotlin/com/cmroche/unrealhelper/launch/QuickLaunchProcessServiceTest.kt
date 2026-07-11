@@ -63,11 +63,69 @@ class QuickLaunchProcessServiceTest {
         assertFalse(replacement.destroyed)
         assertTrue(service.isRunning(key))
         assertEquals(setOf(key), service.runningKeys())
+        assertEquals(2, service.runningLaunches().size)
 
         previous.terminate()
 
         assertTrue(service.isRunning(key))
         assertEquals(setOf(key), service.runningKeys())
+        assertEquals(1, service.runningLaunches().size)
+    }
+
+    @Test
+    fun `same key stop still reaches asynchronously destroying previous handler`() {
+        val factory = FakeQuickLaunchProcessFactory()
+        val service = QuickLaunchProcessService.createForTest(factory)
+        val key = key(targetName = "LyraClient", targetType = "Client")
+        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
+
+        service.launch(key, artifact, commandLine())
+        service.launch(key, artifact, commandLine())
+        val previous = factory.processes.first()
+        val replacement = factory.processes.last()
+
+        service.stop(key)
+
+        assertEquals(2, previous.destroyRequests)
+        assertEquals(1, replacement.destroyRequests)
+    }
+
+    @Test
+    fun `dispose still reaches asynchronously destroying previous handler`() {
+        val factory = FakeQuickLaunchProcessFactory()
+        val service = QuickLaunchProcessService.createForTest(factory)
+        val key = key(targetName = "LyraClient", targetType = "Client")
+        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
+
+        service.launch(key, artifact, commandLine())
+        service.launch(key, artifact, commandLine())
+        val previous = factory.processes.first()
+        val replacement = factory.processes.last()
+
+        service.dispose()
+
+        assertEquals(2, previous.destroyRequests)
+        assertEquals(1, replacement.destroyRequests)
+    }
+
+    @Test
+    fun `destroy failure aborts replacement and keeps previous handler tracked`() {
+        val destroyFailure = IllegalStateException("cannot destroy")
+        val previous = FakeQuickLaunchProcess(destroyFailure = destroyFailure)
+        val factory = FakeQuickLaunchProcessFactory { previous }
+        val service = QuickLaunchProcessService.createForTest(factory)
+        val key = key(targetName = "LyraClient", targetType = "Client")
+        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
+        service.launch(key, artifact, commandLine())
+
+        val thrown = assertThrows(IllegalStateException::class.java) {
+            service.launch(key, artifact, commandLine())
+        }
+
+        assertSame(destroyFailure, thrown)
+        assertEquals(1, factory.processes.size)
+        assertEquals(1, service.runningLaunches().size)
+        assertTrue(service.isRunning(key))
     }
 
     @Test
@@ -258,8 +316,13 @@ class QuickLaunchProcessServiceTest {
 
         service.stopAndWait(captured) { result = it }
 
-        assertEquals(QuickLaunchStopResult.Completed, result)
+        assertEquals(null, result)
         assertFalse(replacement.destroyed)
+        assertEquals(2, service.runningLaunches().size)
+
+        factory.processes.first().terminate()
+
+        assertEquals(QuickLaunchStopResult.Completed, result)
         assertEquals(listOf(key), service.runningLaunches().map { it.key })
     }
 
@@ -317,6 +380,9 @@ private class FakeQuickLaunchProcess(
     var destroyed: Boolean = false
         private set
 
+    var destroyRequests: Int = 0
+        private set
+
     var started: Boolean = false
         private set
 
@@ -327,6 +393,7 @@ private class FakeQuickLaunchProcess(
         get() = terminated
 
     override fun destroy() {
+        destroyRequests += 1
         destroyed = true
         destroyFailure?.let { throw it }
     }

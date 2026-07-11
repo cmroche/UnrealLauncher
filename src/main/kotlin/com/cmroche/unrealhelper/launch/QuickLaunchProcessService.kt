@@ -79,8 +79,6 @@ class QuickLaunchProcessService private constructor(
         val replaced = synchronized(lock) {
             runningProcesses
                 .filterValues { it.info.key == key && it.process is QuickLaunchProcess }
-                .toMap()
-                .also { launches -> launches.keys.forEach(runningProcesses::remove) }
                 .values
                 .map { it.process }
         }

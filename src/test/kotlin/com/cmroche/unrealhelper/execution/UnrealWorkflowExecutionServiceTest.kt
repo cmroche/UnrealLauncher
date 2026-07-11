@@ -204,7 +204,7 @@ class UnrealWorkflowExecutionServiceTest {
     @Test
     fun `stop and restart preserves launch that reused a key after conflict capture`() {
         val fixture = fixture()
-        fixture.launch(clientKey, clientArtifact)
+        val capturedLaunch = fixture.launch(clientKey, clientArtifact)
         val replacementAction = BuildBatch(setOf(clientArtifact))
         val replacementPlan = plan(UnrealWorkflowRequest.BUILD, replacementAction)
         val capturedConflict = fixture.service.conflictFor(replacementPlan)!!
@@ -214,6 +214,10 @@ class UnrealWorkflowExecutionServiceTest {
         fixture.service.stopAndRestart(replacementPlan, capturedConflict)
 
         assertFalse(newerLaunch.destroyed)
+        assertEquals(emptyList<UnrealPlannedAction>(), fixture.executor.createdActions)
+
+        capturedLaunch.terminate()
+
         assertEquals(listOf(replacementAction), fixture.executor.createdActions)
         assertEquals(listOf(clientKey), fixture.launchService.runningLaunches().map { it.key })
     }
