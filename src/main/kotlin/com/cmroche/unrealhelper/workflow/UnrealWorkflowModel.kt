@@ -1,6 +1,8 @@
 package com.cmroche.unrealhelper.workflow
 
 import java.nio.file.Path
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 enum class UnrealWorkflowRequest { BUILD, COOK, PACKAGE, LAUNCH }
 
@@ -107,7 +109,23 @@ internal fun artifactDirectoryName(artifact: UnrealArtifactKey): String = listOf
     artifact.platform,
     artifact.buildConfiguration,
     artifact.architecture,
-).joinToString("-") { value -> value.replace(Regex("[^A-Za-z0-9_.-]"), "_") }
+).joinToString("-") { value -> value.replace(Regex("[^A-Za-z0-9_.-]"), "_") } +
+    "-${artifactIdentityHash(artifact)}"
+
+private fun artifactIdentityHash(artifact: UnrealArtifactKey): String {
+    val identity = listOf(
+        artifact.projectPath.toAbsolutePath().normalize().toString(),
+        artifact.targetName,
+        artifact.targetType,
+        artifact.platform,
+        artifact.buildConfiguration,
+        artifact.architecture.orEmpty(),
+    ).joinToString("\u0000")
+    return MessageDigest.getInstance("SHA-256")
+        .digest(identity.toByteArray(StandardCharsets.UTF_8))
+        .take(6)
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+}
 
 internal fun cookPlatformName(artifact: UnrealArtifactKey): String {
     val base = when (artifact.platform.lowercase()) {

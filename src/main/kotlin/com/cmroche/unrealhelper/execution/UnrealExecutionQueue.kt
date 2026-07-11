@@ -16,6 +16,11 @@ import java.util.concurrent.TimeUnit
 
 enum class UnrealPlanState { IDLE, RUNNING, STOPPING, SUCCEEDED, FAILED, RESTART_BLOCKED }
 
+internal sealed interface UnrealQueueStopResult {
+    data object Completed : UnrealQueueStopResult
+    data class Failed(val message: String) : UnrealQueueStopResult
+}
+
 fun interface UnrealRestartTimeoutScheduler {
     fun schedule(task: () -> Unit)
 
@@ -81,7 +86,7 @@ class UnrealExecutionQueue(
     private var running: RunningAction? = null
     private var presenter: UnrealWorkflowPresenter? = null
     private var pendingReplacement: UnrealExecutionPlan? = null
-    private var pendingStopCompletion: (() -> Unit)? = null
+    private var pendingStopCompletion: ((UnrealQueueStopResult) -> Unit)? = null
     private var restartAwaitingExternalRecovery = false
 
     fun start(plan: UnrealExecutionPlan) = synchronized(lock) {
@@ -133,7 +138,11 @@ class UnrealExecutionQueue(
         }
     }
 
-    fun stopAndWait(callback: () -> Unit) = synchronized(lock) {
+    fun stopAndWait(callback: () -> Unit) = stopAndWaitResult { result ->
+        if (result == UnrealQueueStopResult.Completed) callback()
+    }
+
+    internal fun stopAndWaitResult(callback: (UnrealQueueStopResult) -> Unit) = synchronized(lock) {
         pendingReplacement = null
         pendingStopCompletion = callback
         cancelQueuedLocked()
@@ -143,7 +152,7 @@ class UnrealExecutionQueue(
             cancelCurrentPresentationLocked()
             state = UnrealPlanState.SUCCEEDED
             pendingStopCompletion = null
-            callback()
+            callback(UnrealQueueStopResult.Completed)
             return@synchronized
         }
 
@@ -263,7 +272,7 @@ class UnrealExecutionQueue(
                         startPendingReplacementLocked()
                     } else {
                         state = UnrealPlanState.SUCCEEDED
-                        completion()
+                        completion(UnrealQueueStopResult.Completed)
                     }
                     return@synchronized
                 }
@@ -317,11 +326,13 @@ class UnrealExecutionQueue(
     }
 
     private fun blockRestartLocked(message: String, awaitExternalRecovery: Boolean = false) {
+        val stopCompletion = pendingStopCompletion
         state = UnrealPlanState.RESTART_BLOCKED
         restartAwaitingExternalRecovery = awaitExternalRecovery
         pendingReplacement = null
         pendingStopCompletion = null
         callbacks.restartFailed(message)
+        stopCompletion?.invoke(UnrealQueueStopResult.Failed(message))
     }
 
     private fun scheduleRestartTimeoutLocked(current: RunningAction) {

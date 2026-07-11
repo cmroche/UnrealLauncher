@@ -18,6 +18,7 @@ import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPlanner
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
+import com.cmroche.unrealhelper.workflow.artifactDirectoryName
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.ProcessOutputType
 import org.junit.Assert.assertEquals
@@ -60,7 +61,7 @@ class UnrealPlannedActionExecutorTest {
         assertEquals("/Engines/UE_5.6/Engine/Build/BatchFiles/RunUAT.sh", processes.commands.last().executable)
         assertEquals("-project=/Workspace/Lyra/Lyra.uproject", processes.commands.last().arguments.first { it.startsWith("-project=") })
         assertEquals(
-            "-archivedirectory=/Artifacts/Lyra/LyraClient-Client-Win64-Development",
+            "-archivedirectory=${plan.phases.flatMap { it.actions }.filterIsInstance<Package>().single().archiveDirectory}",
             processes.commands.last().arguments.first { it.startsWith("-archivedirectory=") },
         )
         assertEquals("/Workspace/Lyra", processes.commands.last().workingDirectory)
@@ -89,7 +90,7 @@ class UnrealPlannedActionExecutorTest {
         )
         assertEquals("-cookincremental", processes.commands[1].arguments.first { it == "-cookincremental" })
         assertEquals(
-            "-archivedirectory=/Artifacts/Lyra/LyraClient-Client-Win64-Development",
+            "-archivedirectory=/Artifacts/Lyra/${artifactDirectoryName(client)}",
             processes.commands.last().arguments.first { it.startsWith("-archivedirectory=") },
         )
     }

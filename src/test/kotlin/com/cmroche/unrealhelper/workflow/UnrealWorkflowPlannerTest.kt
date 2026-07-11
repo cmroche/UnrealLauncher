@@ -147,6 +147,16 @@ class UnrealWorkflowPlannerTest {
     }
 
     @Test
+    fun `artifact directory names remain distinct after readable sanitization and stable across calls`() {
+        val base = UnrealArtifactKey(Path.of("/Workspace/Lyra.uproject"), "Lyra/A", "Client", "Win64", "Development")
+        val colliding = base.copy(targetName = "Lyra?A")
+
+        assertTrue(artifactDirectoryName(base).startsWith("Lyra_A-Client-Win64-Development-"))
+        assertEquals(artifactDirectoryName(base), artifactDirectoryName(base))
+        assertTrue(artifactDirectoryName(base) != artifactDirectoryName(colliding))
+    }
+
+    @Test
     fun `explicit cook and package requests always plan full cooks`() {
         val configuration = configuration(
             entry("LyraClient", "Win64", cookOnLaunch = true, incrementalCookOnLaunch = true),

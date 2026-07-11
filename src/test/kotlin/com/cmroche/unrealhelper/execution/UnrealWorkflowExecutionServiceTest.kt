@@ -25,6 +25,57 @@ import java.nio.file.Path
 
 class UnrealWorkflowExecutionServiceTest {
     @Test
+    fun `queue destroy exception remains internally recoverable through service coordination`() {
+        val fixture = fixture()
+        val current = Cook(clientArtifact, UnrealCookMode.FULL)
+        fixture.service.start(plan(UnrealWorkflowRequest.COOK, current))
+        val process = fixture.executor.current.apply {
+            startSuccessfully()
+            destroyFailure = IllegalStateException("queue destroy failed")
+        }
+        val replacementAction = BuildBatch(setOf(clientArtifact))
+        val replacement = plan(UnrealWorkflowRequest.BUILD, replacementAction)
+
+        fixture.service.stopAndRestart(replacement, fixture.service.conflictFor(replacement)!!)
+        assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
+        process.terminate(143)
+        assertEquals(UnrealPlanState.FAILED, fixture.queue.snapshot().state)
+
+        fixture.service.start(replacement)
+        assertEquals(listOf(current, replacementAction), fixture.executor.createdActions)
+    }
+
+    @Test
+    fun `queue stop timeout remains internally recoverable through service coordination`() {
+        val timeouts = RecordingTimeoutScheduler()
+        val fixture = fixture(timeouts)
+        val current = Cook(clientArtifact, UnrealCookMode.FULL)
+        fixture.service.start(plan(UnrealWorkflowRequest.COOK, current))
+        val process = fixture.executor.current.apply { startSuccessfully() }
+        val replacementAction = BuildBatch(setOf(clientArtifact))
+        val replacement = plan(UnrealWorkflowRequest.BUILD, replacementAction)
+
+        fixture.service.stopAndRestart(replacement, fixture.service.conflictFor(replacement)!!)
+        timeouts.fire()
+        assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
+        process.terminate(143)
+        assertEquals(UnrealPlanState.FAILED, fixture.queue.snapshot().state)
+
+        fixture.service.start(replacement)
+        assertEquals(listOf(current, replacementAction), fixture.executor.createdActions)
+    }
+
+    @Test
+    fun `failure notification includes nonzero exit code and startup exception details`() {
+        val action = Cook(clientArtifact, UnrealCookMode.FULL)
+        assertTrue(workflowFailureMessage(UnrealPlanResult.Failure(action, 17)).contains("Exit code: 17"))
+        val startup = workflowFailureMessage(
+            UnrealPlanResult.Failure(action, -1, "IllegalStateException: receipt missing", "/ubt command"),
+        )
+        assertTrue(startup.contains("receipt missing"))
+        assertTrue(startup.contains("/ubt command"))
+    }
+    @Test
     fun `any active queue conflicts even when artifacts do not intersect`() {
         val fixture = fixture()
         val runningAction = Cook(clientArtifact, UnrealCookMode.FULL)
@@ -225,9 +276,9 @@ class UnrealWorkflowExecutionServiceTest {
         assertEquals(listOf(clientKey), fixture.launchService.runningLaunches().map { it.key })
     }
 
-    private fun fixture(): Fixture {
+    private fun fixture(timeoutScheduler: UnrealRestartTimeoutScheduler = UnrealRestartTimeoutScheduler.NONE): Fixture {
         val executor = FakeExecutor()
-        val queue = UnrealExecutionQueue(executor, { NoOpPresenter() })
+        val queue = UnrealExecutionQueue(executor, { NoOpPresenter() }, timeoutScheduler = timeoutScheduler)
         val launchFactory = FakeLaunchFactory()
         val launchService = QuickLaunchProcessService.createForTest(launchFactory)
         return Fixture(
@@ -285,6 +336,7 @@ class UnrealWorkflowExecutionServiceTest {
         override var isProcessTerminating: Boolean = false
         override var isProcessTerminated: Boolean = false
         var destroyCalled: Boolean = false
+        var destroyFailure: RuntimeException? = null
 
         override fun start(listener: UnrealWorkflowProcessListener) {
             this.listener = listener
@@ -292,6 +344,7 @@ class UnrealWorkflowExecutionServiceTest {
 
         override fun destroy() {
             destroyCalled = true
+            destroyFailure?.let { throw it }
             isProcessTerminating = true
         }
 
@@ -302,6 +355,12 @@ class UnrealWorkflowExecutionServiceTest {
             isProcessTerminated = true
             listener.terminated(exitCode)
         }
+    }
+
+    private class RecordingTimeoutScheduler : UnrealRestartTimeoutScheduler {
+        private val tasks = mutableListOf<() -> Unit>()
+        override fun schedule(task: () -> Unit) { tasks += task }
+        fun fire() { tasks.removeFirst().invoke() }
     }
 
     private class FakeLaunchFactory : QuickLaunchProcessFactory {

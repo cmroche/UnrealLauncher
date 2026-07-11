@@ -78,10 +78,24 @@ class UnrealWorkflowExecutionService private constructor(
         val barrier = CompletionBarrier(
             parties = 2,
             completed = { queue.start(plan) },
-            failed = queue::blockRestart,
+            failed = { party, message ->
+                if (party == StopParty.LAUNCH) queue.blockRestart(message)
+            },
         )
-        queue.stopAndWait { barrier.arrive(QuickLaunchStopResult.Completed) }
-        launchService.stopAndWait(conflict.launchedProcesses, barrier::arrive, queue::recoverBlockedRestart)
+        queue.stopAndWaitResult { result ->
+            barrier.arrive(
+                StopParty.QUEUE,
+                when (result) {
+                    UnrealQueueStopResult.Completed -> QuickLaunchStopResult.Completed
+                    is UnrealQueueStopResult.Failed -> QuickLaunchStopResult.Failed(IllegalStateException(result.message))
+                },
+            )
+        }
+        launchService.stopAndWait(
+            conflict.launchedProcesses,
+            { barrier.arrive(StopParty.LAUNCH, it) },
+            queue::recoverBlockedRestart,
+        )
     }
 
     override fun launchStarted(action: Launch, process: UnrealWorkflowProcess) {
@@ -101,15 +115,7 @@ class UnrealWorkflowExecutionService private constructor(
     }
 
     override fun workflowFailed(result: UnrealPlanResult.Failure) {
-        failureReporter(buildString {
-            append("Unreal workflow failed: ").append(result.action.displayName())
-            result.detail?.let { append("\n").append(it) }
-            result.command?.let { append("\nCommand: ").append(it) }
-            if (result.cancelledActions.isNotEmpty()) {
-                append("\nCancelled: ")
-                append(result.cancelledActions.joinToString { it.displayName() })
-            }
-        })
+        failureReporter(workflowFailureMessage(result))
     }
 
     override fun restartFailed(message: String) {
@@ -131,18 +137,18 @@ class UnrealWorkflowExecutionService private constructor(
     private class CompletionBarrier(
         private var parties: Int,
         private val completed: () -> Unit,
-        private val failed: (String) -> Unit,
+        private val failed: (StopParty, String) -> Unit,
     ) {
         private val lock = Any()
         private var resultLatched = false
 
-        fun arrive(result: QuickLaunchStopResult) {
+        fun arrive(party: StopParty, result: QuickLaunchStopResult) {
             val completion = synchronized(lock) {
                 if (resultLatched || parties == 0) return@synchronized null
                 when (result) {
                     is QuickLaunchStopResult.Failed -> {
                         resultLatched = true
-                        { failed(result.cause.message ?: result.cause::class.simpleName.orEmpty()) }
+                        { failed(party, result.cause.message ?: result.cause::class.simpleName.orEmpty()) }
                     }
                     QuickLaunchStopResult.Completed -> {
                         parties--
@@ -159,11 +165,24 @@ class UnrealWorkflowExecutionService private constructor(
         }
     }
 
+    private enum class StopParty { QUEUE, LAUNCH }
+
     companion object {
         internal fun createForTest(
             queue: UnrealExecutionQueue,
             launchService: QuickLaunchProcessService,
             failureReporter: (String) -> Unit = {},
         ): UnrealWorkflowExecutionService = UnrealWorkflowExecutionService(queue, launchService, failureReporter)
+    }
+}
+
+internal fun workflowFailureMessage(result: UnrealPlanResult.Failure): String = buildString {
+    append("Unreal workflow failed: ").append(result.action.displayName())
+    append("\nExit code: ").append(result.exitCode)
+    result.detail?.let { append("\n").append(it) }
+    result.command?.let { append("\nCommand: ").append(it) }
+    if (result.cancelledActions.isNotEmpty()) {
+        append("\nCancelled: ")
+        append(result.cancelledActions.joinToString { it.displayName() })
     }
 }

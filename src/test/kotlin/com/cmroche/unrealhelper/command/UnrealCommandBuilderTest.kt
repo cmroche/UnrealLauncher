@@ -2,6 +2,7 @@ package com.cmroche.unrealhelper.command
 
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
+import com.cmroche.unrealhelper.workflow.artifactCookDirectory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,8 +42,9 @@ class UnrealCommandBuilderTest {
 
     @Test
     fun `cook targets the artifact and skips every other phase`() {
+        val context = context(targetName = "LyraClient", targetType = "Client")
         val command = UnrealCommandBuilder.cook(
-            context(targetName = "LyraClient", targetType = "Client"),
+            context,
             UnrealCookMode.FULL,
         )
 
@@ -59,7 +61,7 @@ class UnrealCommandBuilderTest {
                 "-cook",
                 "-skipstage",
                 "-skippackage",
-                "-CookOutputDir=/Workspace/Lyra/Saved/UnrealHelper/Cooked/LyraClient-Client-Win64-Development/WindowsClient",
+                "-CookOutputDir=${artifactCookDirectory(context.artifact)}",
                 "-client",
                 "-targetplatform=Win64",
                 "-clientconfig=Development",

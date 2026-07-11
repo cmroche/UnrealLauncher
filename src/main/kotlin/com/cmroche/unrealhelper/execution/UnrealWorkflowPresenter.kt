@@ -75,6 +75,7 @@ private class BuildViewUnrealWorkflowPresenter(
     private var rootProgress: BuildProgress<BuildProgressDescriptor>? = null
     private val phaseStates = EnumMap<UnrealPhase, PhaseState>(UnrealPhase::class.java)
     private val actionProgresses = IdentityHashMap<UnrealPlannedAction, BuildProgress<BuildProgressDescriptor>>()
+    private val states = UnrealWorkflowPresentationModel()
 
     override fun start(plan: UnrealExecutionPlan) {
         check(rootProgress == null) { "A workflow presentation can only be started once" }
@@ -95,15 +96,16 @@ private class BuildViewUnrealWorkflowPresenter(
     }
 
     override fun actionStarted(action: UnrealPlannedAction) {
-        check(actionProgresses.containsKey(action)) { "Action was not queued: $action" }
-    }
-
-    override fun actionQueued(action: UnrealPlannedAction) {
-        check(!actionProgresses.containsKey(action)) { "Action has already been queued: $action" }
+        states.start(action)
         val phaseState = phaseStates.getOrPut(action.phase) {
             PhaseState(root().startChildProgress(phaseTitle(action.phase)))
         }
         actionProgresses[action] = phaseState.progress.startChildProgress(actionTitle(action))
+    }
+
+    override fun actionQueued(action: UnrealPlannedAction) {
+        states.queue(action)
+        root().output("Waiting: ${actionTitle(action)}\n", ProcessOutputType.SYSTEM)
     }
 
     override fun output(action: UnrealPlannedAction, text: String, type: ProcessOutputType) {
@@ -111,18 +113,24 @@ private class BuildViewUnrealWorkflowPresenter(
     }
 
     override fun actionFinished(action: UnrealPlannedAction, result: UnrealActionResult) {
+        states.finish(action, result)
         val progress = actionProgresses.remove(action)
-            ?: error("Action has not started: $action")
-        progress.finish(actionResult(result))
+        if (progress != null) {
+            progress.finish(actionResult(result))
+        } else {
+            check(result == UnrealActionResult.Cancelled) { "Action has not started: $action" }
+            root().output("Cancelled while waiting: ${actionTitle(action)}\n", ProcessOutputType.SYSTEM)
+        }
 
-        val phaseState = phaseStates.getValue(action.phase)
-        phaseState.finishedActions++
+        val phaseState = phaseStates[action.phase] ?: return
         phaseState.result = combine(phaseState.result, result)
         val actionCount = requirePlan().phases
             .first { it.phase == action.phase }
             .actions
             .size
-        if (phaseState.finishedActions == actionCount) {
+        val finishedCount = requirePlan().phases.first { it.phase == action.phase }.actions
+            .count { states.stateOf(it).isTerminal }
+        if (finishedCount == actionCount) {
             phaseState.progress.finish(actionResult(phaseState.result))
             phaseState.finished = true
         }
@@ -152,10 +160,45 @@ private class BuildViewUnrealWorkflowPresenter(
 
     private class PhaseState(
         val progress: BuildProgress<BuildProgressDescriptor>,
-        var finishedActions: Int = 0,
         var result: UnrealActionResult = UnrealActionResult.Success,
         var finished: Boolean = false,
     )
+}
+
+internal enum class UnrealPresentationActionState(val isTerminal: Boolean) {
+    WAITING(false), RUNNING(false), SUCCEEDED(true), FAILED(true), CANCELLED(true),
+}
+
+internal class UnrealWorkflowPresentationModel {
+    private val states = IdentityHashMap<UnrealPlannedAction, UnrealPresentationActionState>()
+
+    fun queue(action: UnrealPlannedAction) {
+        check(states.put(action, UnrealPresentationActionState.WAITING) == null) { "Action already queued: $action" }
+    }
+
+    fun start(action: UnrealPlannedAction) {
+        check(states[action] == UnrealPresentationActionState.WAITING) { "Action is not waiting: $action" }
+        check(runningActions().isEmpty()) { "Another action is already running" }
+        states[action] = UnrealPresentationActionState.RUNNING
+    }
+
+    fun finish(action: UnrealPlannedAction, result: UnrealActionResult) {
+        val current = states[action] ?: error("Action was not queued: $action")
+        check(current == UnrealPresentationActionState.RUNNING ||
+            (current == UnrealPresentationActionState.WAITING && result == UnrealActionResult.Cancelled))
+        states[action] = when (result) {
+            UnrealActionResult.Success -> UnrealPresentationActionState.SUCCEEDED
+            is UnrealActionResult.Failure -> UnrealPresentationActionState.FAILED
+            UnrealActionResult.Cancelled -> UnrealPresentationActionState.CANCELLED
+        }
+    }
+
+    fun stateOf(action: UnrealPlannedAction): UnrealPresentationActionState =
+        states[action] ?: error("Action was not queued: $action")
+
+    fun runningActions(): List<UnrealPlannedAction> = states.entries
+        .filter { it.value == UnrealPresentationActionState.RUNNING }
+        .map { it.key }
 }
 
 private fun workflowTitle(plan: UnrealExecutionPlan): String =
