@@ -145,7 +145,7 @@ class UnrealExecutionQueueTest {
     }
 
     @Test
-    fun `replacement is blocked when destroy leaves process alive`() {
+    fun `replacement waits when termination flags lag after destroy`() {
         val fixture = fixture()
         val currentPlan = plan(UnrealWorkflowRequest.COOK, listOf(Cook(artifact, UnrealCookMode.FULL)))
         val replacement = plan(UnrealWorkflowRequest.BUILD, listOf(BuildBatch(setOf(artifact))))
@@ -158,24 +158,18 @@ class UnrealExecutionQueueTest {
         fixture.queue.stopForReplacement(replacement)
 
         assertTrue(process.destroyCalled)
-        assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
+        assertFalse(process.isProcessTerminating)
+        assertFalse(process.isProcessTerminated)
+        assertEquals(UnrealPlanState.STOPPING, fixture.queue.snapshot().state)
         assertEquals(1, fixture.executor.createdActions.size)
-    }
 
-    @Test
-    fun `late termination does not erase a blocked replacement state`() {
-        val fixture = fixture()
-        fixture.queue.start(plan(UnrealWorkflowRequest.COOK, listOf(Cook(artifact, UnrealCookMode.FULL))))
-        val process = fixture.executor.current.apply {
-            startSuccessfully()
-            destroyStartsTermination = false
-        }
-        fixture.queue.stopForReplacement(plan(UnrealWorkflowRequest.BUILD, listOf(BuildBatch(setOf(artifact)))))
+        process.terminate(143)
 
-        process.terminate(1)
-
-        assertEquals(UnrealPlanState.RESTART_BLOCKED, fixture.queue.snapshot().state)
-        assertEquals(1, fixture.executor.createdActions.size)
+        assertEquals(
+            listOf(currentPlan.phases.single().actions.single(), replacement.phases.single().actions.single()),
+            fixture.executor.createdActions,
+        )
+        assertEquals(UnrealPlanState.RUNNING, fixture.queue.snapshot().state)
     }
 
     @Test

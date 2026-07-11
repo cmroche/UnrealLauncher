@@ -94,12 +94,6 @@ class UnrealExecutionQueue(
             blockRestartLocked()
             return@synchronized
         }
-
-        if (state == UnrealPlanState.STOPPING && running === current &&
-            !current.process.isProcessTerminating && !current.process.isProcessTerminated
-        ) {
-            blockRestartLocked()
-        }
     }
 
     private fun startLocked(plan: UnrealExecutionPlan) {
