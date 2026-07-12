@@ -12,6 +12,10 @@ import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.intellij.build.BuildViewManager
 import com.intellij.build.DefaultBuildDescriptor
 import com.intellij.build.events.EventResult
+import com.intellij.build.events.BuildEvent
+import com.intellij.build.events.BuildEventPresentationData
+import com.intellij.build.events.impl.OutputBuildEventImpl
+import com.intellij.build.events.impl.PresentableBuildEventImpl
 import com.intellij.build.events.impl.FailureResultImpl
 import com.intellij.build.events.impl.SkippedResultImpl
 import com.intellij.build.events.impl.SuccessResultImpl
@@ -19,10 +23,13 @@ import com.intellij.build.progress.BuildProgress
 import com.intellij.build.progress.BuildProgressDescriptor
 import com.intellij.build.progress.BuildProgressDescriptorImpl
 import com.intellij.execution.process.ProcessOutputType
+import com.intellij.execution.ui.ExecutionConsole
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.project.Project
-import java.util.EnumMap
+import com.intellij.util.ui.EmptyIcon
 import java.util.IdentityHashMap
 import java.util.UUID
+import javax.swing.Icon
 
 interface UnrealWorkflowPresenter {
     fun start(plan: UnrealExecutionPlan)
@@ -71,16 +78,11 @@ sealed interface UnrealPlanResult {
 private class BuildViewUnrealWorkflowPresenter(
     private val project: Project,
 ) : UnrealWorkflowPresenter {
-    private var plan: UnrealExecutionPlan? = null
     private var rootProgress: BuildProgress<BuildProgressDescriptor>? = null
-    private val phaseStates = EnumMap<UnrealPhase, PhaseState>(UnrealPhase::class.java)
-    private val actionProgresses = IdentityHashMap<UnrealPlannedAction, BuildProgress<BuildProgressDescriptor>>()
-    private val states = UnrealWorkflowPresentationModel()
+    private var treeEvents: UnrealBuildTreeEventAdapter? = null
 
     override fun start(plan: UnrealExecutionPlan) {
         check(rootProgress == null) { "A workflow presentation can only be started once" }
-        this.plan = plan
-
         val descriptor = DefaultBuildDescriptor(
             UUID.randomUUID(),
             workflowTitle(plan),
@@ -93,76 +95,103 @@ private class BuildViewUnrealWorkflowPresenter(
 
         rootProgress = BuildViewManager.createBuildProgress(project)
             .start(BuildProgressDescriptorImpl(descriptor))
+        val manager = project.getService(BuildViewManager::class.java)
+        treeEvents = UnrealBuildTreeEventAdapter(descriptor.id, plan) { event ->
+            manager.onEvent(descriptor.id, event)
+        }
     }
 
     override fun actionStarted(action: UnrealPlannedAction) {
-        states.start(action)
-        val phaseState = phaseStates.getOrPut(action.phase) {
-            PhaseState(root().startChildProgress(phaseTitle(action.phase)))
-        }
-        actionProgresses[action] = phaseState.progress.startChildProgress(actionTitle(action))
+        events().started(action)
     }
 
     override fun actionQueued(action: UnrealPlannedAction) {
-        states.queue(action)
-        root().output("Waiting: ${actionTitle(action)}\n", ProcessOutputType.SYSTEM)
+        events().queued(action)
     }
 
     override fun output(action: UnrealPlannedAction, text: String, type: ProcessOutputType) {
-        actionProgress(action).output(text, type)
+        events().output(action, text, type)
     }
 
     override fun actionFinished(action: UnrealPlannedAction, result: UnrealActionResult) {
-        states.finish(action, result)
-        val progress = actionProgresses.remove(action)
-        if (progress != null) {
-            progress.finish(actionResult(result))
-        } else {
-            check(result == UnrealActionResult.Cancelled) { "Action has not started: $action" }
-            root().output("Cancelled while waiting: ${actionTitle(action)}\n", ProcessOutputType.SYSTEM)
-        }
-
-        val phaseState = phaseStates[action.phase] ?: return
-        phaseState.result = combine(phaseState.result, result)
-        val actionCount = requirePlan().phases
-            .first { it.phase == action.phase }
-            .actions
-            .size
-        val finishedCount = requirePlan().phases.first { it.phase == action.phase }.actions
-            .count { states.stateOf(it).isTerminal }
-        if (finishedCount == actionCount) {
-            phaseState.progress.finish(actionResult(phaseState.result))
-            phaseState.finished = true
-        }
+        events().finished(action, result)
     }
 
     override fun finish(result: UnrealPlanResult) {
         val eventResult = planResult(result)
-        actionProgresses.values.forEach { it.finish(eventResult) }
-        actionProgresses.clear()
-        phaseStates.values
-            .filterNot { it.finished }
-            .forEach {
-                it.progress.finish(eventResult)
-                it.finished = true
-            }
         root().finish(eventResult)
     }
 
     private fun root(): BuildProgress<BuildProgressDescriptor> =
         rootProgress ?: error("Workflow presentation has not started")
 
-    private fun requirePlan(): UnrealExecutionPlan =
-        plan ?: error("Workflow presentation has not started")
+    private fun events(): UnrealBuildTreeEventAdapter =
+        treeEvents ?: error("Workflow presentation has not started")
+}
 
-    private fun actionProgress(action: UnrealPlannedAction): BuildProgress<BuildProgressDescriptor> =
-        actionProgresses[action] ?: error("Action has not started: $action")
+internal class UnrealBuildTreeEventAdapter(
+    private val buildId: Any,
+    private val plan: UnrealExecutionPlan,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val emit: (BuildEvent) -> Unit,
+) {
+    private val states = UnrealWorkflowPresentationModel()
+    private val actionIds = IdentityHashMap<UnrealPlannedAction, Any>()
+    private val phaseIds = mutableMapOf<UnrealPhase, Any>()
+    private val phaseResults = mutableMapOf<UnrealPhase, UnrealActionResult>()
 
-    private class PhaseState(
-        val progress: BuildProgress<BuildProgressDescriptor>,
-        var result: UnrealActionResult = UnrealActionResult.Success,
-        var finished: Boolean = false,
-    )
+    fun queued(action: UnrealPlannedAction) {
+        states.queue(action)
+        val phaseId = phaseIds.getOrPut(action.phase) {
+            UUID.randomUUID().also { id -> emitNode(id, buildId, "Waiting: ${phaseTitle(action.phase)}") }
+        }
+        val actionId = UUID.randomUUID()
+        actionIds[action] = actionId
+        emitNode(actionId, phaseId, "Waiting: ${actionTitle(action)}")
+    }
+
+    fun started(action: UnrealPlannedAction) {
+        states.start(action)
+        emitNode(actionId(action), phaseId(action.phase), "Running: ${actionTitle(action)}")
+        emitNode(phaseId(action.phase), buildId, "Running: ${phaseTitle(action.phase)}")
+    }
+
+    fun output(action: UnrealPlannedAction, text: String, type: ProcessOutputType) {
+        emit(OutputBuildEventImpl(UUID.randomUUID(), actionId(action), now(), text, null, null, type))
+    }
+
+    fun finished(action: UnrealPlannedAction, result: UnrealActionResult) {
+        states.finish(action, result)
+        emitNode(actionId(action), phaseId(action.phase), "${status(result)}: ${actionTitle(action)}")
+        phaseResults[action.phase] = combine(phaseResults[action.phase] ?: UnrealActionResult.Success, result)
+        val phaseActions = plan.phases.first { it.phase == action.phase }.actions
+        if (phaseActions.all { states.stateOf(it).isTerminal }) {
+            val phaseResult = phaseResults.getValue(action.phase)
+            emitNode(phaseId(action.phase), buildId, "${status(phaseResult)}: ${phaseTitle(action.phase)}")
+        }
+    }
+
+    private fun emitNode(id: Any, parentId: Any, message: String) {
+        emit(PresentableBuildEventImpl(id, parentId, now(), message, null, null, NodePresentation))
+    }
+
+    private fun actionId(action: UnrealPlannedAction): Any =
+        actionIds[action] ?: error("Action was not queued: $action")
+
+    private fun phaseId(phase: UnrealPhase): Any =
+        phaseIds[phase] ?: error("Phase was not queued: $phase")
+
+    private fun status(result: UnrealActionResult): String = when (result) {
+        UnrealActionResult.Success -> "Succeeded"
+        is UnrealActionResult.Failure -> "Failed"
+        UnrealActionResult.Cancelled -> "Cancelled"
+    }
+
+    private object NodePresentation : BuildEventPresentationData {
+        override fun getNodeIcon(): Icon = EmptyIcon.create(16)
+        override fun getExecutionConsole(): ExecutionConsole? = null
+        override fun consoleToolbarActions(): ActionGroup? = null
+    }
 }
 
 internal enum class UnrealPresentationActionState(val isTerminal: Boolean) {
