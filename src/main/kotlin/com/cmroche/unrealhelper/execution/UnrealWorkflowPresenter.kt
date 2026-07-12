@@ -16,6 +16,7 @@ import com.intellij.build.events.BuildEvent
 import com.intellij.build.events.BuildEventPresentationData
 import com.intellij.build.events.impl.OutputBuildEventImpl
 import com.intellij.build.events.impl.PresentableBuildEventImpl
+import com.intellij.build.events.impl.FinishEventImpl
 import com.intellij.build.events.impl.FailureResultImpl
 import com.intellij.build.events.impl.SkippedResultImpl
 import com.intellij.build.events.impl.SuccessResultImpl
@@ -162,12 +163,32 @@ internal class UnrealBuildTreeEventAdapter(
 
     fun finished(action: UnrealPlannedAction, result: UnrealActionResult) {
         states.finish(action, result)
-        emitNode(actionId(action), phaseId(action.phase), "${status(result)}: ${actionTitle(action)}")
+        emit(
+            FinishEventImpl(
+                actionId(action),
+                phaseId(action.phase),
+                now(),
+                "${status(result)}: ${actionTitle(action)}",
+                null,
+                null,
+                actionResult(result),
+            ),
+        )
         phaseResults[action.phase] = combine(phaseResults[action.phase] ?: UnrealActionResult.Success, result)
         val phaseActions = plan.phases.first { it.phase == action.phase }.actions
         if (phaseActions.all { states.stateOf(it).isTerminal }) {
             val phaseResult = phaseResults.getValue(action.phase)
-            emitNode(phaseId(action.phase), buildId, "${status(phaseResult)}: ${phaseTitle(action.phase)}")
+            emit(
+                FinishEventImpl(
+                    phaseId(action.phase),
+                    buildId,
+                    now(),
+                    "${status(phaseResult)}: ${phaseTitle(action.phase)}",
+                    null,
+                    null,
+                    actionResult(phaseResult),
+                ),
+            )
         }
     }
 
