@@ -4,8 +4,25 @@ import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class UnrealProjectStartupActivityTest {
+    @Test
+    fun `startup activity uses the ProjectActivity extension point`() {
+        val pluginXml = File("src/main/resources/META-INF/plugin.xml").readText()
+
+        assertTrue(
+            pluginXml.contains(
+                "<postStartupActivity implementation=\"com.cmroche.unrealhelper.discovery.UnrealProjectStartupActivity\"/>",
+            ),
+        )
+        assertFalse(
+            pluginXml.contains(
+                "<backgroundPostStartupActivity implementation=\"com.cmroche.unrealhelper.discovery.UnrealProjectStartupActivity\"/>",
+            ),
+        )
+    }
+
     @Test
     fun `startup discovery runs for unconfigured project`() {
         val settings = UnrealHelperSettings()
