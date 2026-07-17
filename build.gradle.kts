@@ -12,6 +12,8 @@ plugins {
 group = "com.cmroche"
 version = "0.1.0"
 
+val riderVersion = "2026.1.4"
+
 repositories {
     mavenCentral()
     intellijPlatform {
@@ -23,7 +25,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     intellijPlatform {
-        rider("2026.1.2") {
+        rider(riderVersion) {
             useInstaller = false
         }
         bundledPlugin("com.intellij.cidr.debugger")
@@ -35,6 +37,14 @@ dependencies {
     }
 
     testImplementation("junit:junit:4.13.2")
+}
+
+intellijPlatform {
+    pluginVerification {
+        ides {
+            current()
+        }
+    }
 }
 
 java {

@@ -26,6 +26,10 @@
         displayName="UnrealHelper"/>
   </extensions>
 
+  <extensions defaultExtensionNs="com.jetbrains.rider-cpp">
+    <run.configurations.cpp implementation="com.cmroche.unrealhelper.run.UnrealHelperCppConfigurationParametersExtension"/>
+  </extensions>
+
   <extensions defaultExtensionNs="cidr">
     <runConfigurationExtension implementation="com.cmroche.unrealhelper.run.UnrealHelperCidrRunConfigurationExtension"/>
   </extensions>
