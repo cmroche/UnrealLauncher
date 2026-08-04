@@ -4,7 +4,9 @@ import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
 import com.cmroche.unrealhelper.config.TargetPlatformConfigurationLoadResult
 import com.cmroche.unrealhelper.config.TargetPlatformConfigurationsFile
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Path
 
@@ -39,6 +41,64 @@ class TargetPlatformConfigurationToolbarActionsTest {
         )
 
         assertEquals("", selectedName)
+    }
+
+    @Test
+    fun `missing configurations require setup`() {
+        val loadResult = TargetPlatformConfigurationLoadResult.Missing(
+            Path.of(".unrealhelper", "target-platforms.json"),
+        )
+
+        assertTrue(targetPlatformConfigurationNeedsSetup(loadResult))
+        assertEquals(
+            TargetPlatformConfigurationPresentation(
+                text = "Configure Targets",
+                description = "Configure Target & Platform configurations",
+            ),
+            targetPlatformConfigurationPresentation(loadResult, selectedName = ""),
+        )
+        assertTrue(targetPlatformConfigurationUsesSetupStyle("Configure Targets"))
+        assertFalse(targetPlatformConfigurationUsesSetupStyle("Target & Platform: Client"))
+    }
+
+    @Test
+    fun `empty configuration file requires setup`() {
+        assertTrue(
+            targetPlatformConfigurationNeedsSetup(
+                TargetPlatformConfigurationLoadResult.Loaded(
+                    path = Path.of(".unrealhelper", "target-platforms.json"),
+                    file = TargetPlatformConfigurationsFile(),
+                    modifiedMillis = 1L,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `configuration file with an entry uses selector`() {
+        assertFalse(
+            targetPlatformConfigurationNeedsSetup(
+                TargetPlatformConfigurationLoadResult.Loaded(
+                    path = Path.of(".unrealhelper", "target-platforms.json"),
+                    file = TargetPlatformConfigurationsFile(
+                        configurations = listOf(TargetPlatformConfiguration("Client and Server")),
+                    ),
+                    modifiedMillis = 1L,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `malformed configuration does not enter setup state`() {
+        assertFalse(
+            targetPlatformConfigurationNeedsSetup(
+                TargetPlatformConfigurationLoadResult.Malformed(
+                    path = Path.of(".unrealhelper", "target-platforms.json"),
+                    message = "Unexpected JSON",
+                ),
+            ),
+        )
     }
 
     @Test
