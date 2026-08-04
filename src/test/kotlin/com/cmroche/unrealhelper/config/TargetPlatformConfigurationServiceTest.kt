@@ -2,7 +2,9 @@ package com.cmroche.unrealhelper.config
 
 import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
+import com.cmroche.unrealhelper.settings.UnrealTargetState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -48,7 +50,7 @@ class TargetPlatformConfigurationServiceTest {
             configurations = listOf(
                 TargetPlatformConfiguration(
                     "Game Win64",
-                    listOf(TargetPlatformEntry("Game", "Win64")),
+                    listOf(TargetPlatformEntry(targetName = "MyGame", platform = "Win64")),
                 ),
             ),
         )
@@ -62,45 +64,14 @@ class TargetPlatformConfigurationServiceTest {
     }
 
     @Test
-    fun `managed save stores executable and working directory paths relative to project root`() {
-        val settings = settingsWithWorkspaceRoot()
-        val workspaceRoot = temp.root.toPath()
-        val executable = workspaceRoot.resolve("Packages/Windows/MyGame.exe")
-        val workingDirectory = workspaceRoot.resolve("Saved/Launch")
-        val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
-
-        service.saveManagedConfigurations(
-            TargetPlatformConfigurationsFile(
-                configurations = listOf(
-                    TargetPlatformConfiguration(
-                        "Game Win64",
-                        listOf(
-                            TargetPlatformEntry(
-                                targetType = "Game",
-                                platform = "Win64",
-                                executablePath = executable.toString(),
-                                workingDirectory = workingDirectory.toString(),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            dialogSelectedName = "Game Win64",
-        )
-
-        val result = service.load()
-        assertTrue(result is TargetPlatformConfigurationLoadResult.Loaded)
-        result as TargetPlatformConfigurationLoadResult.Loaded
-        val entry = result.file.configurations.single().entries.single()
-        assertEquals("Packages/Windows/MyGame.exe", entry.executablePath)
-        assertEquals("Saved/Launch", entry.workingDirectory)
-    }
-
-    @Test
     fun `legacy selected targets migrate to default shared config when file is missing`() {
         val settings = settingsWithWorkspaceRoot().also {
             it.state.selectedTargetTypes = mutableListOf("Game", "Server")
             it.state.selectedPlatforms = mutableListOf("Win64")
+            it.state.discoveredTargets = mutableListOf(
+                target("LyraGame", "Game"),
+                target("LyraServer", "Server"),
+            )
             it.state.quickLaunchProfiles = mutableListOf(
                 QuickLaunchProfileState(
                     targetType = "Server",
@@ -120,12 +91,12 @@ class TargetPlatformConfigurationServiceTest {
         result as TargetPlatformConfigurationLoadResult.Loaded
         val configuration = result.file.configurations.single()
         assertEquals("Default", configuration.name)
-        assertEquals(listOf("Game", "Server"), configuration.entries.map { it.targetType })
+        assertEquals(listOf("LyraGame", "LyraServer"), configuration.entries.map { it.targetName })
         assertEquals(listOf("Win64", "Win64"), configuration.entries.map { it.platform })
-        val serverEntry = configuration.entries.single { it.targetType == "Server" }
+        val serverEntry = configuration.entries.single { it.targetName == "LyraServer" }
         assertEquals("-log -server", serverEntry.arguments)
-        assertEquals("/tmp/MyServer.exe", serverEntry.executablePath)
-        assertEquals("/tmp/Server", serverEntry.workingDirectory)
+        assertFalse(serverEntry.cookOnLaunch)
+        assertFalse(serverEntry.incrementalCookOnLaunch)
         assertEquals("Default", settings.state.selectedTargetPlatformConfigurationName)
     }
 
@@ -134,6 +105,7 @@ class TargetPlatformConfigurationServiceTest {
         val settings = settingsWithWorkspaceRoot().also {
             it.state.selectedTargetTypes = mutableListOf("Game")
             it.state.selectedPlatforms = mutableListOf("Win64")
+            it.state.discoveredTargets = mutableListOf(target("LyraGame", "Game"))
         }
         val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
 
@@ -224,4 +196,10 @@ class TargetPlatformConfigurationServiceTest {
         settings.state.workspaceRoot = temp.root.toPath().toString()
         return settings
     }
+
+    private fun target(name: String, type: String): UnrealTargetState =
+        UnrealTargetState().also {
+            it.name = name
+            it.type = type
+        }
 }

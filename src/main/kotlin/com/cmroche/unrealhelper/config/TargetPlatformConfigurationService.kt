@@ -36,7 +36,7 @@ class TargetPlatformConfigurationService private constructor(
     fun load(): TargetPlatformConfigurationLoadResult {
         val path = configurationPath()
             ?: return TargetPlatformConfigurationLoadResult.Malformed(UnresolvedConfigurationPath, MissingWorkspaceRootMessage)
-        return store.load(path)
+        return store.load(path, settings.state.discoveredTargets)
     }
 
     fun loadForManagement(): TargetPlatformConfigurationLoadResult {
@@ -46,7 +46,7 @@ class TargetPlatformConfigurationService private constructor(
 
     fun save(file: TargetPlatformConfigurationsFile) {
         val path = configurationPath() ?: error(MissingWorkspaceRootMessage)
-        store.save(path, file.withProjectRelativePaths(ProjectRelativePaths.projectRoot(settings.state)))
+        store.save(path, file)
     }
 
     fun saveManagedConfigurations(
@@ -55,7 +55,6 @@ class TargetPlatformConfigurationService private constructor(
     ) {
         val previousSelectedName = settings.state.selectedTargetPlatformConfigurationName
         val normalizedFile = file.normalized()
-            .withProjectRelativePaths(ProjectRelativePaths.projectRoot(settings.state))
         save(normalizedFile)
         settings.state.selectedTargetPlatformConfigurationName = selectedNameAfterManagedSave(
             previousSelectedName = previousSelectedName,
@@ -66,7 +65,7 @@ class TargetPlatformConfigurationService private constructor(
 
     fun migrateLegacySelectionIfNeeded() {
         val path = configurationPath() ?: return
-        if (store.load(path) !is TargetPlatformConfigurationLoadResult.Missing) {
+        if (store.load(path, settings.state.discoveredTargets) !is TargetPlatformConfigurationLoadResult.Missing) {
             return
         }
 
@@ -81,11 +80,9 @@ class TargetPlatformConfigurationService private constructor(
             platforms.map { platform ->
                 val profile = matchingProfile(state.quickLaunchProfiles, targetType, platform)
                 TargetPlatformEntry(
-                    targetType = targetType,
+                    targetName = migratedTargetName(targetType, state.discoveredTargets),
                     platform = platform,
                     arguments = profile?.arguments.orEmpty(),
-                    executablePath = profile?.executablePath.orEmpty(),
-                    workingDirectory = profile?.workingDirectory.orEmpty(),
                 )
             }
         }

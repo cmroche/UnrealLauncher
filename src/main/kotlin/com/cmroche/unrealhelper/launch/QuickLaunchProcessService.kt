@@ -1,5 +1,8 @@
 package com.cmroche.unrealhelper.launch
 
+import com.cmroche.unrealhelper.execution.UnrealWorkflowProcess
+import com.cmroche.unrealhelper.execution.UnrealRestartTimeoutScheduler
+import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.OSProcessHandler
@@ -9,56 +12,208 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
+import java.util.IdentityHashMap
 
 data class QuickLaunchKey(
     val configurationName: String,
     val entryIndex: Int,
+    val targetName: String,
     val targetType: String,
     val platform: String,
 )
 
+data class RunningLaunchInfo(
+    val key: QuickLaunchKey,
+    val artifact: UnrealArtifactKey,
+    val title: String,
+    val instanceId: QuickLaunchInstanceId,
+)
+
+@JvmInline
+value class QuickLaunchInstanceId internal constructor(internal val value: Long)
+
+sealed class QuickLaunchStopResult {
+    data object Completed : QuickLaunchStopResult()
+
+    data class Failed(val cause: RuntimeException) : QuickLaunchStopResult()
+}
+
 @Service(Service.Level.PROJECT)
 class QuickLaunchProcessService private constructor(
     private val processFactory: QuickLaunchProcessFactory,
+    private val timeoutScheduler: UnrealRestartTimeoutScheduler,
 ) : Disposable {
-    constructor(project: Project) : this(RiderQuickLaunchProcessFactory(project))
+    constructor(project: Project) : this(
+        RiderQuickLaunchProcessFactory(project),
+        UnrealRestartTimeoutScheduler.DEFAULT,
+    )
 
     private val lock = Any()
-    private val runningProcesses = mutableMapOf<QuickLaunchKey, QuickLaunchProcess>()
+    private val runningProcesses = mutableMapOf<QuickLaunchInstanceId, TrackedLaunch>()
+    private val workflowProcesses = IdentityHashMap<UnrealWorkflowProcess, QuickLaunchInstanceId>()
+    private var nextInstanceId = 1L
 
-    fun launch(key: QuickLaunchKey, commandLine: GeneralCommandLine) {
-        stop(key)
+    fun launch(key: QuickLaunchKey, artifact: UnrealArtifactKey, commandLine: GeneralCommandLine) {
+        replaceDirectLaunch(key)
 
-        val process = processFactory.create(commandLine, title(key))
+        val title = title(key)
+        val process = processFactory.create(commandLine, title)
+        val instanceId = synchronized(lock) { nextInstanceIdLocked() }
         process.addTerminationListener {
-            removeIfCurrent(key, process)
-        }
-
-        synchronized(lock) {
-            runningProcesses[key] = process
+            remove(instanceId, process)
         }
 
         try {
             process.run()
+            synchronized(lock) {
+                if (!process.isProcessTerminated) {
+                    runningProcesses[instanceId] = TrackedLaunch(
+                        info = RunningLaunchInfo(key, artifact, title, instanceId),
+                        process = process,
+                    )
+                }
+            }
         } catch (throwable: Throwable) {
-            removeIfCurrent(key, process)
+            remove(instanceId, process)
             process.destroy()
             throw throwable
         }
     }
 
-    fun stop(key: QuickLaunchKey) {
-        val process = synchronized(lock) {
-            runningProcesses.remove(key)
+    private fun replaceDirectLaunch(key: QuickLaunchKey) {
+        val replaced = synchronized(lock) {
+            runningProcesses
+                .filterValues { it.info.key == key && it.process is QuickLaunchProcess }
+                .values
+                .map { it.process }
         }
-        process?.destroy()
+        replaced.forEach { it.destroy() }
+    }
+
+    internal fun registerRunningLaunch(
+        key: QuickLaunchKey,
+        artifact: UnrealArtifactKey,
+        title: String,
+        process: UnrealWorkflowProcess,
+    ) {
+        synchronized(lock) {
+            if (!process.isProcessTerminated) {
+                val trackedProcess = WorkflowTrackedLaunchProcess(process)
+                val instanceId = nextInstanceIdLocked()
+                runningProcesses[instanceId] = TrackedLaunch(
+                    info = RunningLaunchInfo(key, artifact, title, instanceId),
+                    process = trackedProcess,
+                )
+                workflowProcesses[process] = instanceId
+            }
+        }
+    }
+
+    internal fun runningLaunchTerminated(process: UnrealWorkflowProcess) {
+        val trackedProcess = synchronized(lock) {
+            val instanceId = workflowProcesses.remove(process) ?: return@synchronized null
+            runningProcesses.remove(instanceId)?.process as? WorkflowTrackedLaunchProcess
+        }
+        trackedProcess?.terminated()
+    }
+
+    fun stop(key: QuickLaunchKey) {
+        val processes = synchronized(lock) {
+            runningProcesses.values.filter { it.info.key == key }.map { it.process }
+        }
+        processes.forEach { it.destroy() }
+    }
+
+    fun stopAndWait(
+        launches: Collection<RunningLaunchInfo>,
+        callback: (QuickLaunchStopResult) -> Unit,
+    ) = stopAndWait(launches, callback, recovered = {})
+
+    fun stopAndWait(
+        launches: Collection<RunningLaunchInfo>,
+        callback: (QuickLaunchStopResult) -> Unit,
+        recovered: () -> Unit,
+    ) {
+        val processes = synchronized(lock) {
+            launches.mapNotNull { selected ->
+                runningProcesses[selected.instanceId]
+                    ?.takeIf { it.info.key == selected.key }
+                    ?.process
+            }.distinct()
+        }
+        if (processes.isEmpty()) {
+            callback(QuickLaunchStopResult.Completed)
+            return
+        }
+
+        val waitLock = Any()
+        val remaining = processes.toMutableSet()
+        var destroyRequestsFinished = false
+        var result: QuickLaunchStopResult? = null
+        fun completeLocked(completion: QuickLaunchStopResult): QuickLaunchStopResult? {
+            if (result != null) return null
+            result = completion
+            return completion
+        }
+        fun processTerminated(process: TrackedLaunchProcess) {
+            val (completion, recovery) = synchronized(waitLock) {
+                remaining.remove(process)
+                if (destroyRequestsFinished && remaining.isEmpty()) {
+                    if (result is QuickLaunchStopResult.Failed) {
+                        null to recovered
+                    } else {
+                        completeLocked(QuickLaunchStopResult.Completed) to null
+                    }
+                } else {
+                    null to null
+                }
+            }
+            completion?.let(callback)
+            recovery?.invoke()
+        }
+
+        processes.forEach { process ->
+            process.addTerminationListener { processTerminated(process) }
+            if (process.isProcessTerminated) processTerminated(process)
+        }
+        var failure: RuntimeException? = null
+        processes.forEach { process ->
+            if (!process.isProcessTerminated) {
+                try {
+                    process.destroy()
+                } catch (exception: RuntimeException) {
+                    if (failure == null) failure = exception
+                }
+            }
+        }
+        val completion = synchronized(waitLock) {
+            destroyRequestsFinished = true
+            when {
+                failure != null -> completeLocked(QuickLaunchStopResult.Failed(failure))
+                remaining.isEmpty() -> completeLocked(QuickLaunchStopResult.Completed)
+                else -> null
+            }
+        }
+        completion?.let(callback)
+        timeoutScheduler.schedule {
+            val timedOut = synchronized(waitLock) {
+                if (result == null && remaining.isNotEmpty()) {
+                    completeLocked(
+                        QuickLaunchStopResult.Failed(
+                            IllegalStateException("Timed out waiting for ${remaining.size} Unreal launch process(es) to stop"),
+                        ),
+                    )
+                } else {
+                    null
+                }
+            }
+            timedOut?.let(callback)
+        }
     }
 
     fun stopAll() {
         val processes = synchronized(lock) {
-            runningProcesses.values.toList().also {
-                runningProcesses.clear()
-            }
+            runningProcesses.values.map { it.process }.distinct()
         }
         processes.forEach { it.destroy() }
     }
@@ -69,31 +224,47 @@ class QuickLaunchProcessService private constructor(
 
     fun isRunning(key: QuickLaunchKey): Boolean =
         synchronized(lock) {
-            runningProcesses[key]?.isProcessTerminated == false
+            runningProcesses.values.any { it.info.key == key && !it.process.isProcessTerminated }
         }
 
     fun runningKeys(): Set<QuickLaunchKey> =
         synchronized(lock) {
             runningProcesses
-                .filterValues { !it.isProcessTerminated }
-                .keys
+                .values
+                .filter { !it.process.isProcessTerminated }
+                .map { it.info.key }
                 .toSet()
         }
 
-    private fun removeIfCurrent(key: QuickLaunchKey, process: QuickLaunchProcess) {
+    fun runningLaunches(): List<RunningLaunchInfo> = synchronized(lock) {
+        runningProcesses.values.mapNotNull { tracked ->
+            tracked.info.takeIf { !tracked.process.isProcessTerminated }
+        }
+    }
+
+    private fun remove(instanceId: QuickLaunchInstanceId, process: TrackedLaunchProcess) {
         synchronized(lock) {
-            if (runningProcesses[key] === process) {
-                runningProcesses.remove(key)
+            if (runningProcesses[instanceId]?.process === process) {
+                runningProcesses.remove(instanceId)
             }
         }
     }
 
     private fun title(key: QuickLaunchKey): String =
-        "Unreal ${key.configurationName} ${key.entryIndex + 1}: ${key.targetType} ${key.platform}"
+        "Unreal ${key.configurationName} ${key.entryIndex + 1}: ${key.targetName} ${key.targetType} ${key.platform}"
+
+    private fun nextInstanceIdLocked(): QuickLaunchInstanceId = QuickLaunchInstanceId(nextInstanceId++)
+
+    private data class TrackedLaunch(
+        val info: RunningLaunchInfo,
+        val process: TrackedLaunchProcess,
+    )
 
     companion object {
-        internal fun createForTest(processFactory: QuickLaunchProcessFactory): QuickLaunchProcessService =
-            QuickLaunchProcessService(processFactory)
+        internal fun createForTest(
+            processFactory: QuickLaunchProcessFactory,
+            timeoutScheduler: UnrealRestartTimeoutScheduler = UnrealRestartTimeoutScheduler.NONE,
+        ): QuickLaunchProcessService = QuickLaunchProcessService(processFactory, timeoutScheduler)
     }
 }
 
@@ -101,14 +272,48 @@ internal interface QuickLaunchProcessFactory {
     fun create(commandLine: GeneralCommandLine, title: String): QuickLaunchProcess
 }
 
-internal interface QuickLaunchProcess {
+internal interface TrackedLaunchProcess {
+    val identity: Any
     val isProcessTerminated: Boolean
 
     fun destroy()
 
     fun addTerminationListener(listener: () -> Unit)
+}
+
+internal interface QuickLaunchProcess : TrackedLaunchProcess {
+    override val identity: Any
+        get() = this
 
     fun run()
+}
+
+private class WorkflowTrackedLaunchProcess(
+    private val process: UnrealWorkflowProcess,
+) : TrackedLaunchProcess {
+    private val lock = Any()
+    private val terminationListeners = mutableListOf<() -> Unit>()
+
+    override val identity: Any
+        get() = process
+
+    override val isProcessTerminated: Boolean
+        get() = process.isProcessTerminated
+
+    override fun destroy() = process.destroy()
+
+    override fun addTerminationListener(listener: () -> Unit) {
+        synchronized(lock) {
+            terminationListeners += listener
+        }
+    }
+
+    fun terminated() {
+        val listeners = synchronized(lock) {
+            terminationListeners.toList().also { terminationListeners.clear() }
+        }
+        listeners.forEach { it() }
+    }
 }
 
 private class RiderQuickLaunchProcessFactory(private val project: Project) : QuickLaunchProcessFactory {

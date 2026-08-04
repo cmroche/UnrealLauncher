@@ -3,31 +3,32 @@ package com.cmroche.unrealhelper.ui
 import com.cmroche.unrealhelper.config.TargetPlatformConfigurationEditorModel
 import com.cmroche.unrealhelper.config.TargetPlatformConfigurationsFile
 import com.cmroche.unrealhelper.config.TargetPlatformEntry
-import com.cmroche.unrealhelper.config.ProjectRelativePaths
-import com.cmroche.unrealhelper.launch.withDerivedLaunchPaths
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.intellij.openapi.components.service
-import com.intellij.openapi.fileChooser.FileChooser
-import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import java.awt.BorderLayout
+import java.awt.Component
 import java.awt.Dimension
 import java.awt.FlowLayout
-import java.nio.file.Paths
+import javax.swing.DefaultCellEditor
+import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JComponent
+import javax.swing.JComboBox
+import javax.swing.JList
 import javax.swing.JOptionPane
 import javax.swing.JPanel
 import javax.swing.JTable
+import javax.swing.JCheckBox
+import javax.swing.SwingConstants
 import javax.swing.ListSelectionModel
 import javax.swing.JToolBar
-import javax.swing.table.AbstractTableModel
+import javax.swing.table.DefaultTableCellRenderer
 
 class TargetPlatformConfigurationDialog(
     private val project: Project,
@@ -52,11 +53,13 @@ class TargetPlatformConfigurationDialog(
         table.autoResizeMode = JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS
         table.fillsViewportHeight = true
         table.rowHeight = table.rowHeight.coerceAtLeast(24)
-        table.columnModel.getColumn(0).preferredWidth = 110
-        table.columnModel.getColumn(1).preferredWidth = 90
-        table.columnModel.getColumn(2).preferredWidth = 220
-        table.columnModel.getColumn(3).preferredWidth = 220
-        table.columnModel.getColumn(4).preferredWidth = 180
+        table.columnModel.getColumn(TargetPlatformEntryTableModel.TargetColumn).preferredWidth = 180
+        table.columnModel.getColumn(TargetPlatformEntryTableModel.PlatformColumn).preferredWidth = 100
+        table.columnModel.getColumn(TargetPlatformEntryTableModel.ArgumentsColumn).preferredWidth = 220
+        table.columnModel.getColumn(TargetPlatformEntryTableModel.CookColumn).preferredWidth = 70
+        table.columnModel.getColumn(TargetPlatformEntryTableModel.IncrementalCookColumn).preferredWidth = 110
+        table.columnModel.getColumn(TargetPlatformEntryTableModel.IncrementalCookColumn).cellRenderer =
+            IncrementalCookCellRenderer()
     }
     private var updatingConfigurationList = false
 
@@ -103,8 +106,6 @@ class TargetPlatformConfigurationDialog(
         JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).also { panel ->
             panel.add(JButton("Add Entry").also { it.addActionListener { addEntry() } })
             panel.add(JButton("Remove Entry").also { it.addActionListener { removeSelectedEntry() } })
-            panel.add(JButton("Choose Executable").also { it.addActionListener { chooseExecutable() } })
-            panel.add(JButton("Choose Working Directory").also { it.addActionListener { chooseWorkingDirectory() } })
         }
 
     private fun addConfiguration() {
@@ -165,49 +166,6 @@ class TargetPlatformConfigurationDialog(
         }
     }
 
-    private fun chooseExecutable() {
-        choosePath(
-            title = "Choose Executable",
-            chooseDirectory = false,
-            columnIndex = TargetPlatformEntryTableModel.ExecutableColumn,
-        )
-    }
-
-    private fun chooseWorkingDirectory() {
-        choosePath(
-            title = "Choose Working Directory",
-            chooseDirectory = true,
-            columnIndex = TargetPlatformEntryTableModel.WorkingDirectoryColumn,
-        )
-    }
-
-    private fun choosePath(title: String, chooseDirectory: Boolean, columnIndex: Int) {
-        stopEntryCellEditing()
-        val selectedRow = entryTable.selectedRow
-        if (selectedRow < 0) {
-            return
-        }
-
-        val modelRow = entryTable.convertRowIndexToModel(selectedRow)
-        val descriptor = FileChooserDescriptor(
-            !chooseDirectory,
-            chooseDirectory,
-            false,
-            false,
-            false,
-            false,
-        )
-        descriptor.title = title
-
-        val initialPath = entryTableModel.valueAt(modelRow, columnIndex)
-            .takeIf { it.isNotBlank() }
-            ?.let { ProjectRelativePaths.resolveForUse(projectRoot(), it) }
-            ?.let { LocalFileSystem.getInstance().findFileByNioFile(Paths.get(it)) }
-        val selectedFile = FileChooser.chooseFile(descriptor, project, initialPath) ?: return
-        val storedPath = ProjectRelativePaths.storeRelativeTo(projectRoot(), selectedFile.toNioPath().toString())
-        entryTableModel.setValueAt(storedPath, modelRow, columnIndex)
-    }
-
     private fun selectConfiguration(name: String?) {
         if (updatingConfigurationList || name.isNullOrBlank() || name == model.selectedName) {
             return
@@ -233,8 +191,8 @@ class TargetPlatformConfigurationDialog(
             .firstOrNull { it.name == model.selectedName }
             ?.entries
             .orEmpty()
-            .map { it.withDerivedDefaults() }
         entryTableModel.setRows(selectedEntries)
+        configureEntryEditors()
     }
 
     private fun refreshConfigurationList() {
@@ -292,78 +250,77 @@ class TargetPlatformConfigurationDialog(
 
     private fun defaultEntry(): TargetPlatformEntry {
         val state = settings.state
-        val targetType = state.discoveredTargets.firstOrNull()?.type?.takeIf { it.isNotBlank() } ?: "Game"
-        val platform = state.discoveredPlatforms.firstOrNull()?.takeIf { it.isNotBlank() } ?: "Win64"
-        return TargetPlatformEntry(targetType = targetType, platform = platform).withDerivedDefaults()
+        val targetName = state.discoveredTargets.firstOrNull()?.name?.trim().orEmpty()
+        val platform = state.discoveredPlatforms.firstOrNull()?.trim().orEmpty()
+        return TargetPlatformEntry(targetName = targetName, platform = platform)
     }
 
-    private fun TargetPlatformEntry.withDerivedDefaults(): TargetPlatformEntry =
-        withDerivedLaunchPaths(settings.state, Paths.get(settings.effectivePackageDirectory()))
+    private fun configureEntryEditors() {
+        val state = settings.state
+        val targetNames = (state.discoveredTargets.map { it.name } + entryTableModel.snapshot().map { it.targetName })
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+        val platforms = (state.discoveredPlatforms + entryTableModel.snapshot().map { it.platform })
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+        val targetTypes = state.discoveredTargets
+            .associate { it.name.trim() to it.type.trim() }
 
-    private fun projectRoot() = ProjectRelativePaths.projectRoot(settings.state)
+        val targetComboBox = JComboBox(targetNames.toTypedArray()).also { comboBox ->
+            comboBox.renderer = object : DefaultListCellRenderer() {
+                override fun getListCellRendererComponent(
+                    list: JList<*>?,
+                    value: Any?,
+                    index: Int,
+                    isSelected: Boolean,
+                    cellHasFocus: Boolean,
+                ): Component = super.getListCellRendererComponent(
+                    list,
+                    targetLabel(value?.toString().orEmpty(), targetTypes),
+                    index,
+                    isSelected,
+                    cellHasFocus,
+                )
+            }
+        }
+        entryTable.columnModel.getColumn(TargetPlatformEntryTableModel.TargetColumn).apply {
+            cellEditor = DefaultCellEditor(targetComboBox)
+            cellRenderer = object : DefaultTableCellRenderer() {
+                override fun setValue(value: Any?) {
+                    super.setValue(targetLabel(value?.toString().orEmpty(), targetTypes))
+                }
+            }
+        }
+        entryTable.columnModel.getColumn(TargetPlatformEntryTableModel.PlatformColumn).cellEditor =
+            DefaultCellEditor(JComboBox(platforms.toTypedArray()))
+    }
+
+    private fun targetLabel(targetName: String, targetTypes: Map<String, String>): String {
+        val targetType = targetTypes[targetName].orEmpty()
+        return if (targetType.isBlank()) targetName else "$targetName ($targetType)"
+    }
 }
 
-private class TargetPlatformEntryTableModel : AbstractTableModel() {
-    private val columns = listOf("Target Type", "Platform", "Arguments", "Executable", "Working Directory")
-    private var rows = mutableListOf<TargetPlatformEntry>()
-
-    override fun getRowCount(): Int = rows.size
-
-    override fun getColumnCount(): Int = columns.size
-
-    override fun getColumnName(column: Int): String = columns[column]
-
-    override fun getColumnClass(columnIndex: Int): Class<*> = String::class.java
-
-    override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean = true
-
-    override fun getValueAt(rowIndex: Int, columnIndex: Int): Any =
-        when (columnIndex) {
-            0 -> rows[rowIndex].targetType
-            1 -> rows[rowIndex].platform
-            2 -> rows[rowIndex].arguments
-            3 -> rows[rowIndex].executablePath
-            4 -> rows[rowIndex].workingDirectory
-            else -> ""
-        }
-
-    fun valueAt(rowIndex: Int, columnIndex: Int): String =
-        getValueAt(rowIndex, columnIndex).toString()
-
-    override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
-        val text = value?.toString().orEmpty()
-        rows[rowIndex] = when (columnIndex) {
-            0 -> rows[rowIndex].copy(targetType = text)
-            1 -> rows[rowIndex].copy(platform = text)
-            2 -> rows[rowIndex].copy(arguments = text)
-            3 -> rows[rowIndex].copy(executablePath = text)
-            4 -> rows[rowIndex].copy(workingDirectory = text)
-            else -> rows[rowIndex]
-        }
-        fireTableCellUpdated(rowIndex, columnIndex)
+internal class IncrementalCookCellRenderer : JCheckBox(), javax.swing.table.TableCellRenderer {
+    init {
+        horizontalAlignment = SwingConstants.CENTER
+        isOpaque = true
     }
 
-    fun setRows(entries: List<TargetPlatformEntry>) {
-        rows = entries.toMutableList()
-        fireTableDataChanged()
-    }
-
-    fun snapshot(): List<TargetPlatformEntry> = rows.toList()
-
-    fun addRow(entry: TargetPlatformEntry) {
-        rows += entry
-        fireTableRowsInserted(rows.lastIndex, rows.lastIndex)
-    }
-
-    fun removeRow(index: Int) {
-        if (index !in rows.indices) return
-
-        rows.removeAt(index)
-        fireTableRowsDeleted(index, index)
-    }
-
-    companion object {
-        const val ExecutableColumn = 3
-        const val WorkingDirectoryColumn = 4
+    override fun getTableCellRendererComponent(
+        table: JTable,
+        value: Any?,
+        isSelected: Boolean,
+        hasFocus: Boolean,
+        row: Int,
+        column: Int,
+    ): Component {
+        this.isSelected = value == true
+        isEnabled = table.model.isCellEditable(table.convertRowIndexToModel(row), column)
+        background = if (isSelected) table.selectionBackground else table.background
+        foreground = if (isSelected) table.selectionForeground else table.foreground
+        return this
     }
 }

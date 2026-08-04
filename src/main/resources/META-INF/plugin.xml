@@ -10,7 +10,6 @@
 
   <depends>com.intellij.modules.rider</depends>
   <depends>com.jetbrains.rider-cpp</depends>
-  <depends>org.jetbrains.plugins.terminal</depends>
 
   <extensions defaultExtensionNs="com.intellij">
     <notificationGroup id="UnrealHelper" displayType="BALLOON"/>
@@ -18,6 +17,7 @@
     <projectService serviceImplementation="com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryService"/>
     <projectService serviceImplementation="com.cmroche.unrealhelper.config.TargetPlatformConfigurationService"/>
     <projectService serviceImplementation="com.cmroche.unrealhelper.launch.QuickLaunchProcessService"/>
+    <projectService serviceImplementation="com.cmroche.unrealhelper.execution.UnrealWorkflowExecutionService"/>
     <postStartupActivity implementation="com.cmroche.unrealhelper.discovery.UnrealProjectStartupActivity"/>
     <projectConfigurable
         parentId="tools"
@@ -69,12 +69,12 @@
           id="UnrealHelper.LaunchAction"
           class="com.cmroche.unrealhelper.actions.UnrealLaunchAction"
           text="Launch"
-          description="Launch selected cooked Unreal targets"/>
+          description="Build and launch selected Unreal targets"/>
       <action
           id="UnrealHelper.StopLaunchAction"
           class="com.cmroche.unrealhelper.actions.UnrealStopLaunchAction"
           text="Stop"
-          description="Stop UnrealHelper quick launches"/>
+          description="Stop selected UnrealHelper launches"/>
       <action
           id="UnrealHelper.ManageTargetPlatformConfigurationsAction"
           class="com.cmroche.unrealhelper.ui.TargetPlatformConfigurationManageAction"

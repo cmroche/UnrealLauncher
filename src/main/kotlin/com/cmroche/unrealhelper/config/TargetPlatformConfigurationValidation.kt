@@ -1,6 +1,7 @@
 package com.cmroche.unrealhelper.config
 
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
+import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import java.nio.file.Path
 
 data class TargetPlatformConfigurationFileValidation(
@@ -8,6 +9,23 @@ data class TargetPlatformConfigurationFileValidation(
     val blankNameCount: Int = 0,
 ) {
     val isValid: Boolean get() = duplicateNames.isEmpty() && blankNameCount == 0
+}
+
+data class ResolvedTargetPlatformEntry(
+    val index: Int,
+    val targetName: String,
+    val targetType: String,
+    val platform: String,
+    val arguments: String,
+    val cookOnLaunch: Boolean,
+    val incrementalCookOnLaunch: Boolean,
+)
+
+data class EntryResolutionResult(
+    val entries: List<ResolvedTargetPlatformEntry>,
+    val messages: List<String>,
+) {
+    val isValid: Boolean get() = messages.isEmpty()
 }
 
 sealed interface SelectedTargetPlatformConfigurationResult {
@@ -19,7 +37,12 @@ sealed interface SelectedTargetPlatformConfigurationResult {
     data object NoSelection : SelectedTargetPlatformConfigurationResult
     data class StaleSelection(val selectedName: String) : SelectedTargetPlatformConfigurationResult
     data class EmptyConfiguration(val name: String) : SelectedTargetPlatformConfigurationResult
-    data class InvalidEntries(val name: String, val messages: List<String>) : SelectedTargetPlatformConfigurationResult
+    data class InvalidEntries(
+        val configuration: TargetPlatformConfiguration,
+        val messages: List<String>,
+    ) : SelectedTargetPlatformConfigurationResult {
+        val name: String get() = configuration.name
+    }
 }
 
 fun validateConfigurationFile(file: TargetPlatformConfigurationsFile): TargetPlatformConfigurationFileValidation {
@@ -34,6 +57,56 @@ fun validateConfigurationFile(file: TargetPlatformConfigurationsFile): TargetPla
     return TargetPlatformConfigurationFileValidation(
         duplicateNames = duplicateNames,
         blankNameCount = blankNameCount,
+    )
+}
+
+fun resolveConfigurationEntries(
+    configuration: TargetPlatformConfiguration,
+    state: UnrealHelperSettingsState,
+): EntryResolutionResult {
+    val discoveredTargetsByName = state.discoveredTargets
+        .associateBy { it.name.trim() }
+    val discoveredPlatforms = state.discoveredPlatforms
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .toSet()
+    val resolvedEntries = mutableListOf<ResolvedTargetPlatformEntry>()
+    val messages = mutableListOf<String>()
+
+    configuration.entries.forEachIndexed { index, entry ->
+        val targetName = entry.targetName.trim()
+        val platform = entry.platform.trim()
+        val target = discoveredTargetsByName[targetName]
+        val targetType = target?.type?.trim()
+        val problems = buildList {
+            if (target == null) add("build target is not discovered")
+            if (target != null && targetType !in SupportedTargetTypes) {
+                add("target type '$targetType' is not supported; expected Game, Client, or Server")
+            }
+            if (platform !in discoveredPlatforms) add("platform is not discovered")
+            if (entry.incrementalCookOnLaunch && !entry.cookOnLaunch) {
+                add("incremental cook requires Cook")
+            }
+        }
+
+        if (problems.isEmpty()) {
+            resolvedEntries += ResolvedTargetPlatformEntry(
+                index = index,
+                targetName = targetName,
+                targetType = requireNotNull(targetType),
+                platform = platform,
+                arguments = entry.arguments.trim(),
+                cookOnLaunch = entry.cookOnLaunch,
+                incrementalCookOnLaunch = entry.incrementalCookOnLaunch,
+            )
+        } else {
+            messages += "Entry ${index + 1} $targetName / $platform: ${problems.joinToString("; ")}"
+        }
+    }
+
+    return EntryResolutionResult(
+        entries = resolvedEntries,
+        messages = messages,
     )
 }
 
@@ -73,23 +146,13 @@ private fun resolveLoadedConfiguration(
         return SelectedTargetPlatformConfigurationResult.EmptyConfiguration(configuration.name)
     }
 
-    val discoveredTargetTypes = state.discoveredTargets.map { it.type.trim() }.filter { it.isNotEmpty() }.toSet()
-    val discoveredPlatforms = state.discoveredPlatforms.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-    val invalidMessages = configuration.entries.mapIndexedNotNull { index, entry ->
-        val problems = buildList {
-            if (entry.targetType !in discoveredTargetTypes) add("target type is not discovered")
-            if (entry.platform !in discoveredPlatforms) add("platform is not discovered")
-        }
-        if (problems.isEmpty()) {
-            null
-        } else {
-            "Entry ${index + 1} ${entry.targetType} / ${entry.platform}: ${problems.joinToString("; ")}"
-        }
-    }
+    val entryResolution = resolveConfigurationEntries(configuration, state)
 
-    return if (invalidMessages.isEmpty()) {
+    return if (entryResolution.isValid) {
         SelectedTargetPlatformConfigurationResult.Valid(configuration)
     } else {
-        SelectedTargetPlatformConfigurationResult.InvalidEntries(configuration.name, invalidMessages)
+        SelectedTargetPlatformConfigurationResult.InvalidEntries(configuration, entryResolution.messages)
     }
 }
+
+private val SupportedTargetTypes: Set<String> = UnrealTargetType.entries.map { it.name }.toSet()

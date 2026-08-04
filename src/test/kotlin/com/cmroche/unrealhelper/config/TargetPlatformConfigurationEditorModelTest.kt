@@ -60,8 +60,8 @@ class TargetPlatformConfigurationEditorModelTest {
     @Test
     fun `duplicate uses copy suffix and preserves entries`() {
         val entries = listOf(
-            TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-log"),
-            TargetPlatformEntry(targetType = "Server", platform = "Linux", arguments = "/Game/Maps/Arena"),
+            TargetPlatformEntry(targetName = "MyGame", platform = "Win64", arguments = "-log"),
+            TargetPlatformEntry(targetName = "MyServer", platform = "Linux", arguments = "/Game/Maps/Arena"),
         )
         val model = TargetPlatformConfigurationEditorModel(
             TargetPlatformConfigurationsFile(
@@ -169,7 +169,7 @@ class TargetPlatformConfigurationEditorModelTest {
                 configurations = listOf(
                     TargetPlatformConfiguration(
                         "Game",
-                        entries = listOf(TargetPlatformEntry(targetType = "Game", platform = "Win64")),
+                        entries = listOf(TargetPlatformEntry(targetName = "MyGame", platform = "Win64")),
                     ),
                 ),
             ),
@@ -178,16 +178,16 @@ class TargetPlatformConfigurationEditorModelTest {
         assertTrue(
             model.setEntries(
                 listOf(
-                    TargetPlatformEntry(targetType = "Client", platform = "Win64", arguments = "-client"),
-                    TargetPlatformEntry(targetType = "Server", platform = "Win64", arguments = "-server"),
+                    TargetPlatformEntry(targetName = "MyClient", platform = "Win64", arguments = "-client"),
+                    TargetPlatformEntry(targetName = "MyServer", platform = "Win64", arguments = "-server"),
                 ),
             ),
         )
 
         assertEquals(
             listOf(
-                TargetPlatformEntry(targetType = "Client", platform = "Win64", arguments = "-client"),
-                TargetPlatformEntry(targetType = "Server", platform = "Win64", arguments = "-server"),
+                TargetPlatformEntry(targetName = "MyClient", platform = "Win64", arguments = "-client"),
+                TargetPlatformEntry(targetName = "MyServer", platform = "Win64", arguments = "-server"),
             ),
             model.snapshot().configurations.single().entries,
         )
@@ -200,23 +200,23 @@ class TargetPlatformConfigurationEditorModelTest {
                 configurations = listOf(TargetPlatformConfiguration("Game")),
             ),
         )
-        val first = TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-log")
-        val second = TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-trace=cpu")
+        val first = TargetPlatformEntry(targetName = "MyGame", platform = "Win64", arguments = "-log")
+        val second = TargetPlatformEntry(targetName = "MyGame", platform = "Win64", arguments = "-trace=cpu")
 
         assertTrue(model.addEntry(first))
         assertTrue(model.addEntry(second))
         assertEquals(listOf(first, second), model.snapshot().configurations.single().entries)
 
         val replacement = listOf(
-            TargetPlatformEntry(targetType = " Game ", platform = " Win64 ", arguments = " -stdout "),
-            TargetPlatformEntry(targetType = " Game ", platform = " Win64 ", arguments = " -FullStdOutLogOutput "),
+            TargetPlatformEntry(targetName = " MyGame ", platform = " Win64 ", arguments = " -stdout "),
+            TargetPlatformEntry(targetName = " MyGame ", platform = " Win64 ", arguments = " -FullStdOutLogOutput "),
         )
         assertTrue(model.setEntries(replacement))
 
         assertEquals(
             listOf(
-                TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-stdout"),
-                TargetPlatformEntry(targetType = "Game", platform = "Win64", arguments = "-FullStdOutLogOutput"),
+                TargetPlatformEntry(targetName = "MyGame", platform = "Win64", arguments = "-stdout"),
+                TargetPlatformEntry(targetName = "MyGame", platform = "Win64", arguments = "-FullStdOutLogOutput"),
             ),
             model.snapshot().configurations.single().entries,
         )
