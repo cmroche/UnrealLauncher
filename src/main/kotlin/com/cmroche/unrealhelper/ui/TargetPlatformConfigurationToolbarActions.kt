@@ -66,7 +66,7 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
 
             override fun presentationChanged(event: PropertyChangeEvent) {
                 super.presentationChanged(event)
-                if (event.propertyName == "text") {
+                if (event.propertyName == "text" || event.propertyName == "description") {
                     updateSetupStyle()
                 }
             }
@@ -86,7 +86,10 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
             }
 
             private fun updateSetupStyle() {
-                val usesSetupStyle = targetPlatformConfigurationUsesSetupStyle(presentation.text)
+                val usesSetupStyle = targetPlatformConfigurationUsesSetupStyle(
+                    presentation.text,
+                    presentation.description,
+                )
                 font = if (usesSetupStyle) {
                     regularFont.deriveFont(regularFont.style or Font.ITALIC)
                 } else {
@@ -130,7 +133,7 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
     }
 
     private companion object {
-        const val DefaultText = "Target & Platform"
+        const val DefaultText = ConfigureText
         const val DefaultDescription = "Select Target & Platform configuration"
     }
 }
@@ -192,11 +195,13 @@ internal data class TargetPlatformConfigurationPresentation(
 internal fun targetPlatformConfigurationPresentation(selectedName: String): TargetPlatformConfigurationPresentation {
     val trimmedName = selectedName.trim()
     if (trimmedName.isEmpty()) {
-        return TargetPlatformConfigurationPresentation("Target & Platform", null)
+        return TargetPlatformConfigurationPresentation(ConfigureText, null)
     }
 
-    val text = "Target & Platform: $trimmedName"
-    return TargetPlatformConfigurationPresentation(text, text)
+    return TargetPlatformConfigurationPresentation(
+        text = trimmedName,
+        description = "$SelectedDescriptionPrefix$trimmedName",
+    )
 }
 
 internal fun targetPlatformConfigurationPresentation(
@@ -205,7 +210,7 @@ internal fun targetPlatformConfigurationPresentation(
 ): TargetPlatformConfigurationPresentation {
     if (targetPlatformConfigurationNeedsSetup(loadResult)) {
         return TargetPlatformConfigurationPresentation(
-            text = ConfigureTargetsText,
+            text = ConfigureText,
             description = "Configure Target & Platform configurations",
         )
     }
@@ -236,8 +241,11 @@ internal fun targetPlatformConfigurationNeedsSetup(
         loadResult is TargetPlatformConfigurationLoadResult.Loaded &&
         loadResult.file.configurations.isEmpty()
 
-internal fun targetPlatformConfigurationUsesSetupStyle(text: String?): Boolean =
-    text == ConfigureTargetsText
+internal fun targetPlatformConfigurationUsesSetupStyle(
+    text: String?,
+    description: String?,
+): Boolean =
+    text == ConfigureText && !description.orEmpty().startsWith(SelectedDescriptionPrefix)
 
 internal fun targetPlatformConfigurationManagementError(
     loadResult: TargetPlatformConfigurationLoadResult,
@@ -250,4 +258,5 @@ internal fun targetPlatformConfigurationManagementError(
         -> null
     }
 
-private const val ConfigureTargetsText = "Configure Targets"
+private const val ConfigureText = "Configure ..."
+private const val SelectedDescriptionPrefix = "Selected Target & Platform configuration: "

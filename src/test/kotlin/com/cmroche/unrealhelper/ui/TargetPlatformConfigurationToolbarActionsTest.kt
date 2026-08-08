@@ -15,7 +15,7 @@ class TargetPlatformConfigurationToolbarActionsTest {
     fun `unselected toolbar presentation uses default label`() {
         val presentation = targetPlatformConfigurationPresentation("")
 
-        assertEquals("Target & Platform", presentation.text)
+        assertEquals("Configure ...", presentation.text)
         assertNull(presentation.description)
     }
 
@@ -23,8 +23,11 @@ class TargetPlatformConfigurationToolbarActionsTest {
     fun `selected toolbar presentation uses configuration name`() {
         val presentation = targetPlatformConfigurationPresentation("Client and Server")
 
-        assertEquals("Target & Platform: Client and Server", presentation.text)
-        assertEquals("Target & Platform: Client and Server", presentation.description)
+        assertEquals("Client and Server", presentation.text)
+        assertEquals(
+            "Selected Target & Platform configuration: Client and Server",
+            presentation.description,
+        )
     }
 
     @Test
@@ -52,13 +55,35 @@ class TargetPlatformConfigurationToolbarActionsTest {
         assertTrue(targetPlatformConfigurationNeedsSetup(loadResult))
         assertEquals(
             TargetPlatformConfigurationPresentation(
-                text = "Configure Targets",
+                text = "Configure ...",
                 description = "Configure Target & Platform configurations",
             ),
             targetPlatformConfigurationPresentation(loadResult, selectedName = ""),
         )
-        assertTrue(targetPlatformConfigurationUsesSetupStyle("Configure Targets"))
-        assertFalse(targetPlatformConfigurationUsesSetupStyle("Target & Platform: Client"))
+        assertTrue(
+            targetPlatformConfigurationUsesSetupStyle(
+                text = "Configure ...",
+                description = "Configure Target & Platform configurations",
+            ),
+        )
+        assertFalse(
+            targetPlatformConfigurationUsesSetupStyle(
+                text = "Client",
+                description = "Selected Target & Platform configuration: Client",
+            ),
+        )
+    }
+
+    @Test
+    fun `configuration named like the default label does not use setup style`() {
+        val presentation = targetPlatformConfigurationPresentation("Configure ...")
+
+        assertFalse(
+            targetPlatformConfigurationUsesSetupStyle(
+                presentation.text,
+                presentation.description,
+            ),
+        )
     }
 
     @Test
