@@ -28,6 +28,7 @@ import java.awt.Dimension
 import java.nio.file.Paths
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
+import javax.swing.JComboBox
 import javax.swing.JTextField
 import javax.swing.SwingUtilities
 import javax.swing.plaf.basic.BasicComboBoxEditor
@@ -46,15 +47,22 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
         val project = event.project
         event.presentation.isVisible = project != null
         event.presentation.isEnabled = project != null && isCompatibleWithSelectedRunConfiguration(project)
+        event.presentation.putClientProperty(ProjectKey, project)
+
+        val comboBox = event.presentation.getClientProperty(CustomComponentAction.COMPONENT_KEY) as? GlobalArgsComboBox
+        if (comboBox != null) {
+            SwingUtilities.invokeLater {
+                comboBox.attachProject(project)
+            }
+        }
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
-        val comboBox = ComboBox<String>()
-        var refreshing = false
+        val comboBox = GlobalArgsComboBox()
 
-        fun project(): Project? = projectFor(comboBox)
+        fun project(): Project? = comboBox.project ?: projectFor(comboBox)
         fun updateEnabledState(enabled: Boolean) {
             comboBox.isEnabled = enabled
             comboBox.editor.editorComponent?.isEnabled = enabled
@@ -76,7 +84,7 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
                         override fun changedUpdate(event: DocumentEvent) = syncFromToolbarText()
 
                         private fun syncFromToolbarText() {
-                            if (refreshing) return
+                            if (comboBox.refreshing) return
 
                             val currentProject = project() ?: return
                             syncToolbarCommandLine(
@@ -109,32 +117,25 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
             }
         }
 
-        fun refresh() {
-            val currentProject = project() ?: return
-            val settings = currentProject.service<UnrealHelperSettings>()
-            val state = settings.state
-            val values = listOf(state.activeCommandLine)
-                .filter { it.isNotBlank() } + settings.knownCommandLines()
-
-            refreshing = true
-            comboBox.model = DefaultComboBoxModel(values.distinct().toTypedArray())
-            comboBox.selectedItem = state.activeCommandLine
-            comboBox.editor.item = state.activeCommandLine
-            refreshing = false
-        }
-
         comboBox.addPopupMenuListener(object : PopupMenuListener {
-            override fun popupMenuWillBecomeVisible(event: PopupMenuEvent) = refresh()
+            override fun popupMenuWillBecomeVisible(event: PopupMenuEvent) {
+                val currentProject = project() ?: return
+                comboBox.refreshSelection(currentProject.service<UnrealHelperSettings>())
+            }
             override fun popupMenuWillBecomeInvisible(event: PopupMenuEvent) = Unit
             override fun popupMenuCanceled(event: PopupMenuEvent) = Unit
         })
 
         comboBox.addActionListener {
-            if (refreshing) return@addActionListener
+            if (comboBox.refreshing) return@addActionListener
 
             val currentProject = project() ?: return@addActionListener
             val commandLine = comboBox.editor.item?.toString().orEmpty()
             currentProject.service<UnrealHelperSettings>().setActiveCommandLine(commandLine)
+        }
+
+        SwingUtilities.invokeLater {
+            comboBox.attachProject(presentation.getClientProperty(ProjectKey))
         }
 
         return comboBox
@@ -188,6 +189,7 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
     private companion object {
         private const val CommandLineInputWidth = 330
         private val CompatibilityStateKey = Key.create<UnrealHelperSettingsState>("UnrealHelper.compatibilityState")
+        private val ProjectKey = Key.create<Project>("UnrealHelper.globalArgsProject")
 
         fun toolbarBackground() = JBColor.namedColor("MainToolbar.background", UIUtil.getPanelBackground())
 
@@ -226,6 +228,40 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
     }
 }
 
+internal class GlobalArgsComboBox : ComboBox<String>() {
+    var project: Project? = null
+        private set
+    var refreshing: Boolean = false
+        private set
+    private var initialSelectionRestored: Boolean = false
+
+    fun attachProject(project: Project?) {
+        if (this.project !== project) {
+            this.project = project
+            initialSelectionRestored = false
+        }
+        if (project != null && !project.isDisposed) {
+            restoreInitialSelection(project.service<UnrealHelperSettings>())
+        }
+    }
+
+    internal fun restoreInitialSelection(settings: UnrealHelperSettings) {
+        if (initialSelectionRestored) return
+
+        refreshSelection(settings)
+        initialSelectionRestored = true
+    }
+
+    fun refreshSelection(settings: UnrealHelperSettings) {
+        refreshing = true
+        try {
+            restoreCommandLineSelection(this, settings)
+        } finally {
+            refreshing = false
+        }
+    }
+}
+
 internal fun syncToolbarCommandLine(
     settings: UnrealHelperSettings,
     toolbarEditorCommandLine: String?,
@@ -234,4 +270,17 @@ internal fun syncToolbarCommandLine(
         settings.setActiveCommandLine(toolbarEditorCommandLine, rememberRecent = false)
     }
     return settings.state.activeCommandLine
+}
+
+internal fun restoreCommandLineSelection(
+    comboBox: JComboBox<String>,
+    settings: UnrealHelperSettings,
+) {
+    val state = settings.state
+    val values = listOf(state.activeCommandLine)
+        .filter { it.isNotBlank() } + settings.knownCommandLines()
+
+    comboBox.model = DefaultComboBoxModel(values.distinct().toTypedArray())
+    comboBox.selectedItem = state.activeCommandLine
+    comboBox.editor.item = state.activeCommandLine
 }

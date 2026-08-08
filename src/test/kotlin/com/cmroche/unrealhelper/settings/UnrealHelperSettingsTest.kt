@@ -84,6 +84,22 @@ class UnrealHelperSettingsTest {
     }
 
     @Test
+    fun `active command line survives state serialization`() {
+        val savedState = UnrealHelperSettingsState().also {
+            it.activeCommandLine = "-game -windowed -log"
+        }
+        val loadedState = XmlSerializer.deserialize(
+            XmlSerializer.serialize(savedState),
+            UnrealHelperSettingsState::class.java,
+        )
+        val settings = UnrealHelperSettings()
+
+        settings.loadState(loadedState)
+
+        assertEquals("-game -windowed -log", settings.state.activeCommandLine)
+    }
+
+    @Test
     fun `selected target types and platforms survive state serialization`() {
         val savedState = UnrealHelperSettingsState().also {
             it.selectedTargetTypes = mutableListOf("Game", "Server")

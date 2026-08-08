@@ -36,4 +36,37 @@ class GlobalArgsToolbarActionTest {
         assertEquals("-noop", commandLine)
         assertEquals("-noop", settings.state.activeCommandLine)
     }
+
+    @Test
+    fun `selector restores persisted active command line as its initial choice`() {
+        val settings = UnrealHelperSettings().also {
+            it.rememberCommandLine("-game -log")
+            it.rememberCommandLine("-server -log")
+            it.setActiveCommandLine("-game -log")
+        }
+        val comboBox = GlobalArgsComboBox().also { it.isEditable = true }
+
+        comboBox.restoreInitialSelection(settings)
+
+        assertEquals("-game -log", comboBox.selectedItem)
+        assertEquals("-game -log", comboBox.editor.item)
+        assertEquals(listOf("-game -log", "-server -log"), comboBox.model.items())
+    }
+
+    @Test
+    fun `repeated action updates do not replace the restored selector value`() {
+        val settings = UnrealHelperSettings().also {
+            it.setActiveCommandLine("-noop")
+        }
+        val comboBox = GlobalArgsComboBox().also { it.isEditable = true }
+        comboBox.restoreInitialSelection(settings)
+        comboBox.editor.item = "-game"
+
+        comboBox.restoreInitialSelection(settings)
+
+        assertEquals("-game", comboBox.editor.item)
+    }
+
+    private fun <T> javax.swing.ComboBoxModel<T>.items(): List<T> =
+        (0 until size).map(::getElementAt)
 }
