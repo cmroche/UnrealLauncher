@@ -139,7 +139,7 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
 }
 
 class TargetPlatformConfigurationManageAction : DumbAwareAction(
-    "Manage Target & Platform Configurations",
+    ConfigureText,
     "Create, modify, and delete shared Target & Platform configurations",
     AllIcons.General.Settings,
 ) {

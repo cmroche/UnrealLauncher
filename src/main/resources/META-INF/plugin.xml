@@ -78,7 +78,7 @@
       <action
           id="UnrealHelper.ManageTargetPlatformConfigurationsAction"
           class="com.cmroche.unrealhelper.ui.TargetPlatformConfigurationManageAction"
-          text="Manage Target &amp; Platform Configurations"
+          text="Configure ..."
           description="Create, modify, and delete shared Target &amp; Platform configurations"
           icon="com.intellij.icons.AllIcons.General.Settings"/>
     </group>

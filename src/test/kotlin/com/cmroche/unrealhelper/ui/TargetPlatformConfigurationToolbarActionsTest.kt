@@ -12,6 +12,11 @@ import java.nio.file.Path
 
 class TargetPlatformConfigurationToolbarActionsTest {
     @Test
+    fun `configuration popup uses concise configure label`() {
+        assertEquals("Configure ...", TargetPlatformConfigurationManageAction().templatePresentation.text)
+    }
+
+    @Test
     fun `unselected toolbar presentation uses default label`() {
         val presentation = targetPlatformConfigurationPresentation("")
 

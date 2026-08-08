@@ -45,6 +45,10 @@ class ToolbarActionIconsTest {
             "com.intellij.icons.AllIcons.General.Settings",
             actionIcon(document, "UnrealHelper.ManageTargetPlatformConfigurationsAction"),
         )
+        assertEquals(
+            "Configure ...",
+            actionText(document, "UnrealHelper.ManageTargetPlatformConfigurationsAction"),
+        )
         assertNull(actionClass(document, "UnrealHelper.TargetTypesToolbarAction"))
         assertNull(actionClass(document, "UnrealHelper.PlatformsToolbarAction"))
     }
@@ -67,6 +71,18 @@ class ToolbarActionIconsTest {
             val action = actions.item(index) as org.w3c.dom.Element
             if (action.getAttribute("id") == id) {
                 return action.getAttribute("icon").takeIf { it.isNotBlank() }
+            }
+        }
+
+        return null
+    }
+
+    private fun actionText(document: org.w3c.dom.Document, id: String): String? {
+        val actions = document.getElementsByTagName("action")
+        for (index in 0 until actions.length) {
+            val action = actions.item(index) as org.w3c.dom.Element
+            if (action.getAttribute("id") == id) {
+                return action.getAttribute("text").takeIf { it.isNotBlank() }
             }
         }
 
