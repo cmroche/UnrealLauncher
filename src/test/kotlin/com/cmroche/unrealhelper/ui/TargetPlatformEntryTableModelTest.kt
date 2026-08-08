@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import javax.swing.JCheckBox
 import javax.swing.JTable
 
 class TargetPlatformEntryTableModelTest {
@@ -18,8 +19,28 @@ class TargetPlatformEntryTableModelTest {
             (0 until model.columnCount).map(model::getColumnName),
         )
         assertEquals(String::class.java, model.getColumnClass(TargetPlatformEntryTableModel.TargetColumn))
-        assertEquals(Boolean::class.java, model.getColumnClass(TargetPlatformEntryTableModel.CookColumn))
-        assertEquals(Boolean::class.java, model.getColumnClass(TargetPlatformEntryTableModel.IncrementalCookColumn))
+        assertEquals(Boolean::class.javaObjectType, model.getColumnClass(TargetPlatformEntryTableModel.CookColumn))
+        assertEquals(Boolean::class.javaObjectType, model.getColumnClass(TargetPlatformEntryTableModel.IncrementalCookColumn))
+    }
+
+    @Test
+    fun `cook column uses a checkbox renderer and editor`() {
+        val model = TargetPlatformEntryTableModel().also {
+            it.setRows(listOf(TargetPlatformEntry(targetName = "Lyra", platform = "Mac")))
+        }
+        val table = JTable(model)
+
+        val renderer = table.getCellRenderer(0, TargetPlatformEntryTableModel.CookColumn)
+        val rendered = renderer.getTableCellRendererComponent(
+            table, false, false, false, 0, TargetPlatformEntryTableModel.CookColumn,
+        )
+        val editor = table.getCellEditor(0, TargetPlatformEntryTableModel.CookColumn)
+        val edited = editor.getTableCellEditorComponent(
+            table, false, true, 0, TargetPlatformEntryTableModel.CookColumn,
+        )
+
+        assertTrue(rendered is JCheckBox)
+        assertTrue(edited is JCheckBox)
     }
 
     @Test

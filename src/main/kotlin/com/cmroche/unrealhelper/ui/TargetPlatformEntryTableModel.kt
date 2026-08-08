@@ -18,7 +18,7 @@ class TargetPlatformEntryTableModel : AbstractTableModel() {
 
     override fun getColumnClass(column: Int): Class<*> =
         if (column == CookColumn || column == IncrementalCookColumn) {
-            Boolean::class.java
+            Boolean::class.javaObjectType
         } else {
             String::class.java
         }
