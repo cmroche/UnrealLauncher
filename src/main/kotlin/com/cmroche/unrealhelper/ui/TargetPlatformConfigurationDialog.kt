@@ -4,30 +4,31 @@ import com.cmroche.unrealhelper.config.TargetPlatformConfigurationEditorModel
 import com.cmroche.unrealhelper.config.TargetPlatformConfigurationsFile
 import com.cmroche.unrealhelper.config.TargetPlatformEntry
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionToolbarPosition
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.ui.ToolbarDecorator
 import com.intellij.ui.components.JBList
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Dimension
-import java.awt.FlowLayout
 import javax.swing.DefaultCellEditor
 import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
-import javax.swing.JButton
+import javax.swing.JCheckBox
 import javax.swing.JComponent
 import javax.swing.JComboBox
 import javax.swing.JList
 import javax.swing.JOptionPane
 import javax.swing.JPanel
 import javax.swing.JTable
-import javax.swing.JCheckBox
-import javax.swing.SwingConstants
 import javax.swing.ListSelectionModel
-import javax.swing.JToolBar
+import javax.swing.SwingConstants
 import javax.swing.table.DefaultTableCellRenderer
 
 class TargetPlatformConfigurationDialog(
@@ -80,33 +81,50 @@ class TargetPlatformConfigurationDialog(
     override fun createCenterPanel(): JComponent {
         val panel = JPanel(BorderLayout(8, 8))
         panel.preferredSize = Dimension(720, 420)
-        panel.add(createToolbar(), BorderLayout.NORTH)
-        panel.add(JBScrollPane(configurationList), BorderLayout.WEST)
+        panel.add(createConfigurationPanel(), BorderLayout.WEST)
         panel.add(createEntryPanel(), BorderLayout.CENTER)
         return panel
     }
 
-    private fun createToolbar(): JToolBar =
-        JToolBar().also { toolbar ->
-            toolbar.isFloatable = false
-            toolbar.add(JButton("Add").also { it.addActionListener { addConfiguration() } })
-            toolbar.add(JButton("Duplicate").also { it.addActionListener { duplicateConfiguration() } })
-            toolbar.add(JButton("Rename").also { it.addActionListener { renameConfiguration() } })
-            toolbar.add(JButton("Delete").also { it.addActionListener { deleteConfiguration() } })
-        }
+    private fun createConfigurationPanel(): JComponent =
+        ToolbarDecorator.createDecorator(configurationList)
+            .setToolbarPosition(ActionToolbarPosition.TOP)
+            .setAddAction { addConfiguration() }
+            .setAddActionName("Add Configuration")
+            .setRemoveAction { deleteConfiguration() }
+            .setRemoveActionName("Remove Configuration")
+            .setEditAction { renameConfiguration() }
+            .setEditActionName("Rename Configuration")
+            .disableUpDownActions()
+            .addExtraAction(
+                object : AnAction(
+                    "Duplicate Configuration",
+                    "Duplicate Configuration",
+                    AllIcons.Actions.Copy,
+                ) {
+                    override fun actionPerformed(event: AnActionEvent) {
+                        duplicateConfiguration()
+                    }
 
-    private fun createEntryPanel(): JComponent {
-        val panel = JPanel(BorderLayout(0, 8))
-        panel.add(JBScrollPane(entryTable), BorderLayout.CENTER)
-        panel.add(createEntryControls(), BorderLayout.SOUTH)
-        return panel
-    }
+                    override fun update(event: AnActionEvent) {
+                        event.presentation.isEnabled = configurationList.selectedIndex >= 0
+                    }
+                },
+            )
+            .createPanel()
 
-    private fun createEntryControls(): JComponent =
-        JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).also { panel ->
-            panel.add(JButton("Add Entry").also { it.addActionListener { addEntry() } })
-            panel.add(JButton("Remove Entry").also { it.addActionListener { removeSelectedEntry() } })
-        }
+    private fun createEntryPanel(): JComponent =
+        ToolbarDecorator.createDecorator(entryTable)
+            .setToolbarPosition(ActionToolbarPosition.TOP)
+            .setAddAction { addEntry() }
+            .setAddActionName("Add Entry")
+            .setAddActionUpdater { model.selectedName.isNotBlank() }
+            .setRemoveAction { removeSelectedEntry() }
+            .setRemoveActionName("Remove Entry")
+            .setEditAction { editSelectedEntry() }
+            .setEditActionName("Edit Entry")
+            .disableUpDownActions()
+            .createPanel()
 
     private fun addConfiguration() {
         val name = promptForConfigurationName("Add Configuration", nextConfigurationName()) ?: return
@@ -163,6 +181,17 @@ class TargetPlatformConfigurationDialog(
         val selectedRow = entryTable.selectedRow
         if (selectedRow >= 0) {
             entryTableModel.removeRow(entryTable.convertRowIndexToModel(selectedRow))
+            if (entryTable.rowCount > 0) {
+                val nextRow = selectedRow.coerceAtMost(entryTable.rowCount - 1)
+                entryTable.setRowSelectionInterval(nextRow, nextRow)
+            }
+        }
+    }
+
+    private fun editSelectedEntry() {
+        val (row, column) = editableEntryCell(entryTable) ?: return
+        if (entryTable.editCellAt(row, column)) {
+            entryTable.editorComponent?.requestFocusInWindow()
         }
     }
 
@@ -301,6 +330,16 @@ class TargetPlatformConfigurationDialog(
         val targetType = targetTypes[targetName].orEmpty()
         return if (targetType.isBlank()) targetName else "$targetName ($targetType)"
     }
+}
+
+internal fun editableEntryCell(table: JTable): Pair<Int, Int>? {
+    val row = table.selectedRow.takeIf { it >= 0 } ?: return null
+    val selectedColumn = table.selectedColumn
+        .takeIf { it >= 0 && table.isCellEditable(row, it) }
+    val column = selectedColumn
+        ?: (0 until table.columnCount).firstOrNull { table.isCellEditable(row, it) }
+        ?: return null
+    return row to column
 }
 
 internal class IncrementalCookCellRenderer : JCheckBox(), javax.swing.table.TableCellRenderer {

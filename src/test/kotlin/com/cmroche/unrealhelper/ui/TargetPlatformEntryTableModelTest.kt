@@ -60,4 +60,26 @@ class TargetPlatformEntryTableModelTest {
 
         assertFalse(component.isEnabled)
     }
+
+    @Test
+    fun `entry edit action uses the selected editable cell`() {
+        val model = TargetPlatformEntryTableModel().also {
+            it.setRows(listOf(TargetPlatformEntry(targetName = "Lyra", platform = "Mac")))
+        }
+        val table = JTable(model)
+        table.changeSelection(0, TargetPlatformEntryTableModel.ArgumentsColumn, false, false)
+
+        assertEquals(0 to TargetPlatformEntryTableModel.ArgumentsColumn, editableEntryCell(table))
+    }
+
+    @Test
+    fun `entry edit action falls back when the selected cell is disabled`() {
+        val model = TargetPlatformEntryTableModel().also {
+            it.setRows(listOf(TargetPlatformEntry(targetName = "Lyra", platform = "Mac")))
+        }
+        val table = JTable(model)
+        table.changeSelection(0, TargetPlatformEntryTableModel.IncrementalCookColumn, false, false)
+
+        assertEquals(0 to TargetPlatformEntryTableModel.TargetColumn, editableEntryCell(table))
+    }
 }
