@@ -69,12 +69,14 @@
           id="UnrealHelper.LaunchAction"
           class="com.cmroche.unrealhelper.actions.UnrealLaunchAction"
           text="Launch"
-          description="Build and launch selected Unreal targets"/>
+          description="Build and launch selected Unreal targets"
+          icon="com.intellij.icons.AllIcons.Actions.Execute"/>
       <action
           id="UnrealHelper.StopLaunchAction"
           class="com.cmroche.unrealhelper.actions.UnrealStopLaunchAction"
           text="Stop"
-          description="Stop selected UnrealHelper launches"/>
+          description="Stop selected UnrealHelper launches"
+          icon="com.intellij.icons.AllIcons.Actions.Suspend"/>
       <action
           id="UnrealHelper.ManageTargetPlatformConfigurationsAction"
           class="com.cmroche.unrealhelper.ui.TargetPlatformConfigurationManageAction"

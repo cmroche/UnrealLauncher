@@ -3,13 +3,14 @@ package com.cmroche.unrealhelper.ui
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 
 class ToolbarActionIconsTest {
     @Test
-    fun `build cook and package actions declare toolbar icons`() {
+    fun `workflow actions declare toolbar icons`() {
         val pluginXml = File("src/main/resources/META-INF/plugin.xml")
         val document = DocumentBuilderFactory.newInstance()
             .newDocumentBuilder()
@@ -18,12 +19,21 @@ class ToolbarActionIconsTest {
         assertEquals("com.intellij.icons.AllIcons.Actions.Compile", actionIcon(document, "UnrealHelper.BuildAction"))
         assertEquals("/icons/cook.svg", actionIcon(document, "UnrealHelper.CookAction"))
         assertEquals("/icons/package.svg", actionIcon(document, "UnrealHelper.PackageAction"))
+        assertEquals("com.intellij.icons.AllIcons.Actions.Execute", actionIcon(document, "UnrealHelper.LaunchAction"))
+        assertEquals("com.intellij.icons.AllIcons.Actions.Suspend", actionIcon(document, "UnrealHelper.StopLaunchAction"))
     }
 
     @Test
     fun `custom cook and package icons are bundled resources`() {
         assertNotNull(javaClass.getResource("/icons/cook.svg"))
         assertNotNull(javaClass.getResource("/icons/package.svg"))
+    }
+
+    @Test
+    fun `package icon uses active blue palette`() {
+        val packageIcon = requireNotNull(javaClass.getResource("/icons/package.svg")).readText()
+
+        assertTrue(packageIcon.contains("#3574F0"))
     }
 
     @Test
