@@ -2,6 +2,7 @@ package com.cmroche.unrealhelper.workflow
 
 import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
 import com.cmroche.unrealhelper.config.resolveConfigurationEntries
+import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import java.nio.file.Files
@@ -158,6 +159,16 @@ class UnrealWorkflowPreflightValidator(
             errors += "Workflow plan for configuration '$configurationName' has invalid phase order: " +
                 phases.joinToString(", ")
         }
+
+        executionPlan.phases
+            .filter { it.phase in UatPhases }
+            .flatMap { phase -> phase.actions.flatMap { action -> action.artifacts } }
+            .filter { it.targetType == UnrealTargetType.Editor.name }
+            .distinct()
+            .forEach { artifact ->
+                errors += "Editor target '${artifact.targetName}' cannot be cooked, staged, or packaged; " +
+                    "choose a Game, Client, or Server target"
+            }
     }
 
     private fun resolveProjectPath(uprojectPath: String, projectBasePath: String?): Path? {

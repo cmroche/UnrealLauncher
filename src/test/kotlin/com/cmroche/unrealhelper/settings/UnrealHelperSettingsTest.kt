@@ -252,6 +252,7 @@ class UnrealHelperSettingsTest {
         assertEquals(listOf("Example warning"), settings.state.discoveryWarnings)
         assertEquals("MyGameServer", settings.state.discoveredTargets[1].name)
         assertEquals("Server", settings.state.discoveredTargets[1].type)
+        assertEquals(UnrealHelperSettings.CurrentDiscoveryVersion, settings.state.discoveryVersion)
     }
 
     @Test

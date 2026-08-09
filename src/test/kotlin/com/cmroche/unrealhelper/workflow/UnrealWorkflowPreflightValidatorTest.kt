@@ -79,6 +79,47 @@ class UnrealWorkflowPreflightValidatorTest {
     }
 
     @Test
+    fun `UAT workflows reject editor target before execution`() {
+        val fixture = fixture()
+        fixture.state.discoveredTargets.single().also {
+            it.name = "LyraEditor"
+            it.type = "Editor"
+        }
+        listOf(
+            UnrealWorkflowRequest.COOK to false,
+            UnrealWorkflowRequest.PACKAGE to false,
+            UnrealWorkflowRequest.LAUNCH to true,
+        ).forEach { (request, cookOnLaunch) ->
+            val configuration = TargetPlatformConfiguration(
+                name = "Editor",
+                entries = listOf(
+                    TargetPlatformEntry(
+                        targetName = "LyraEditor",
+                        platform = "Win64",
+                        cookOnLaunch = cookOnLaunch,
+                    ),
+                ),
+            )
+
+            val errors = validator().validate(
+                request,
+                configuration,
+                fixture.state,
+                fixture.workspace.toString(),
+            )
+
+            assertEquals(
+                "$request errors",
+                listOf(
+                    "Editor target 'LyraEditor' cannot be cooked, staged, or packaged; " +
+                        "choose a Game, Client, or Server target",
+                ),
+                errors,
+            )
+        }
+    }
+
+    @Test
     fun `package creates a missing destination after validating its writable parent`() {
         val fixture = fixture()
         val destination = fixture.workspace.resolve("missing-package")

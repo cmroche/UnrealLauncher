@@ -52,7 +52,9 @@ object UnrealProjectDiscovery {
         "Android",
         "IOS",
     )
-    private val targetClassRegex = Regex("""class\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*TargetRules""")
+    private val targetClassRegex = Regex(
+        """class\s+([A-Za-z_][A-Za-z0-9_]*Target)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)""",
+    )
     private val targetTypeRegex = Regex("""TargetType\.(Game|Client|Server|Editor)\b""")
     private val platformReferenceRegex = Regex("""UnrealTargetPlatform\.([A-Za-z0-9_]+)""")
 
@@ -111,8 +113,18 @@ object UnrealProjectDiscovery {
             return emptyList()
         }
 
-        return targetFiles
-            .mapNotNull { parseTargetFile(workspaceRoot, it, warnings) }
+        val parsedTargets = targetFiles.mapNotNull { parseTargetFile(workspaceRoot, it, warnings) }
+        val targetsByClassName = parsedTargets.associateBy { it.className }
+
+        return parsedTargets
+            .map { target ->
+                DiscoveredUnrealTarget(
+                    name = target.name,
+                    type = resolveTargetType(target, targetsByClassName),
+                    path = target.path,
+                    usesUniqueBuildEnvironment = resolveUniqueBuildEnvironment(target, targetsByClassName),
+                )
+            }
             .distinctBy { it.name to it.type }
             .sortedWith(compareBy<DiscoveredUnrealTarget> { it.type.ordinal }.thenBy { it.name })
     }
@@ -121,24 +133,52 @@ object UnrealProjectDiscovery {
         workspaceRoot: Path,
         targetFile: Path,
         warnings: MutableList<String>,
-    ): DiscoveredUnrealTarget? {
+    ): ParsedUnrealTarget? {
         val text = runCatching { Files.readString(targetFile) }
             .getOrElse {
                 warnings += "Could not read target file $targetFile: ${it.message}"
                 return null
             }
-        val className = targetClassRegex.find(text)?.groupValues?.get(1)
-        val targetName = className?.removeSuffix("Target")
-            ?: targetFile.fileName.toString().removeSuffix(".Target.cs")
-        val targetType = targetTypeRegex.find(text)?.groupValues?.get(1)?.let(UnrealTargetType::valueOf)
-            ?: inferTargetType(targetName)
+        val targetName = targetFile.fileName.toString().removeSuffix(".Target.cs")
+        val expectedClassName = "${targetName}Target"
+        val classMatch = targetClassRegex.findAll(text)
+            .firstOrNull { it.groupValues[1] == expectedClassName }
+            ?: targetClassRegex.find(text)
 
-        return DiscoveredUnrealTarget(
+        return ParsedUnrealTarget(
             name = targetName,
-            type = targetType,
+            className = classMatch?.groupValues?.get(1) ?: expectedClassName,
+            baseClassName = classMatch?.groupValues?.get(2),
+            explicitType = targetTypeRegex.find(text)?.groupValues?.get(1)?.let(UnrealTargetType::valueOf),
             path = workspaceRoot.relativize(targetFile).toString(),
-            usesUniqueBuildEnvironment = usesUniqueBuildEnvironment(text),
+            declaresUniqueBuildEnvironment = usesUniqueBuildEnvironment(text),
         )
+    }
+
+    private fun resolveTargetType(
+        target: ParsedUnrealTarget,
+        targetsByClassName: Map<String, ParsedUnrealTarget>,
+        visited: Set<String> = emptySet(),
+    ): UnrealTargetType {
+        target.explicitType?.let { return it }
+        if (target.className in visited) return inferTargetType(target.name)
+        val baseTarget = target.baseClassName?.let(targetsByClassName::get)
+        return baseTarget?.let {
+            resolveTargetType(it, targetsByClassName, visited + target.className)
+        } ?: inferTargetType(target.name)
+    }
+
+    private fun resolveUniqueBuildEnvironment(
+        target: ParsedUnrealTarget,
+        targetsByClassName: Map<String, ParsedUnrealTarget>,
+        visited: Set<String> = emptySet(),
+    ): Boolean {
+        if (target.declaresUniqueBuildEnvironment) return true
+        if (target.className in visited) return false
+        val baseTarget = target.baseClassName?.let(targetsByClassName::get)
+        return baseTarget?.let {
+            resolveUniqueBuildEnvironment(it, targetsByClassName, visited + target.className)
+        } ?: false
     }
 
     private fun usesUniqueBuildEnvironment(text: String): Boolean =
@@ -248,4 +288,13 @@ object UnrealProjectDiscovery {
 
     private fun hasExcludedPathName(root: Path, path: Path): Boolean =
         root.relativize(path).any { it.toString() in excludedPathNames }
+
+    private data class ParsedUnrealTarget(
+        val name: String,
+        val className: String,
+        val baseClassName: String?,
+        val explicitType: UnrealTargetType?,
+        val path: String,
+        val declaresUniqueBuildEnvironment: Boolean,
+    )
 }

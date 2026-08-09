@@ -12,6 +12,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 class UnrealHelperSettingsState {
+    var discoveryVersion: Int = 0
     var uprojectPath: String = ""
     var workspaceRoot: String = ""
     var packageDirectory: String = ""
@@ -89,6 +90,7 @@ class UnrealHelperSettings : PersistentStateComponent<UnrealHelperSettingsState>
             .distinct()
 
     fun applyDiscoveryResult(result: UnrealProjectDiscoveryResult) {
+        state.discoveryVersion = CurrentDiscoveryVersion
         state.workspaceRoot = result.workspaceRoot.orEmpty()
         state.uprojectPath = result.uprojectPath.orEmpty()
         state.discoveredTargets = result.targets.map { it.toState() }.toMutableList()
@@ -116,6 +118,7 @@ class UnrealHelperSettings : PersistentStateComponent<UnrealHelperSettingsState>
     fun hasConfiguredProject(): Boolean = state.uprojectPath.isNotBlank()
 
     companion object {
+        const val CurrentDiscoveryVersion = 1
         const val DefaultBuildConfiguration = "Development"
         val BuildConfigurations: List<String> = listOf("Debug", "DebugGame", "Development", "Test", "Shipping")
 

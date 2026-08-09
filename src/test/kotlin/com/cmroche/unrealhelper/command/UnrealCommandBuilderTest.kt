@@ -77,6 +77,14 @@ class UnrealCommandBuilderTest {
         assertTrue(command.arguments.contains("-cookincremental"))
     }
 
+    @Test(expected = IllegalArgumentException::class)
+    fun `cook rejects editor target`() {
+        UnrealCommandBuilder.cook(
+            context(targetName = "LyraEditor", targetType = "Editor"),
+            UnrealCookMode.FULL,
+        )
+    }
+
     @Test
     fun `cook writes to its artifact specific output directory`() {
         val output = Path.of("/Workspace/Lyra/Saved/UnrealHelper/Cooked/LyraClient/WindowsClient")

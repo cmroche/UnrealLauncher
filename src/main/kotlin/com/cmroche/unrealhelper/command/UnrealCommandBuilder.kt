@@ -86,8 +86,11 @@ object UnrealCommandBuilder {
         context: UnrealCommandContext,
         osName: String,
         phaseArguments: List<String>,
-    ): UnrealCommand =
-        UnrealCommand(
+    ): UnrealCommand {
+        require(context.targetType != "Editor") {
+            "Editor target '${context.targetName}' cannot be cooked, staged, or packaged"
+        }
+        return UnrealCommand(
             title = title,
             executable = runUat(context.engineRoot, osName),
             arguments = listOf(
@@ -99,6 +102,7 @@ object UnrealCommandBuilder {
             ) + phaseArguments + roleArguments(context),
             workingDirectory = context.workspaceRoot.toString(),
         )
+    }
 
     private fun roleArguments(context: UnrealCommandContext): List<String> =
         if (context.targetType == "Server") {

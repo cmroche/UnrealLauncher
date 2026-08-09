@@ -140,6 +140,41 @@ class UnrealProjectDiscoveryTest {
     }
 
     @Test
+    fun `inherits target type and unique build environment from base target`() {
+        val root = temporaryFolder.newFolder("InheritedGame").toPath()
+        Files.writeString(root.resolve("InheritedGame.uproject"), "{}")
+        Files.createDirectories(root.resolve("Source"))
+        Files.writeString(
+            root.resolve("Source").resolve("InheritedServer.Target.cs"),
+            """
+            public class InheritedServerTarget : TargetRules
+            {
+                public InheritedServerTarget(TargetInfo Target) : base(Target)
+                {
+                    Type = TargetType.Server;
+                    BuildEnvironment = TargetBuildEnvironment.Unique;
+                }
+            }
+            """.trimIndent(),
+        )
+        Files.writeString(
+            root.resolve("Source").resolve("InheritedServerEOS.Target.cs"),
+            """
+            public class InheritedServerEOSTarget : InheritedServerTarget
+            {
+                public InheritedServerEOSTarget(TargetInfo Target) : base(Target) { }
+            }
+            """.trimIndent(),
+        )
+
+        val target = UnrealProjectDiscovery.discover(root).targets
+            .single { it.name == "InheritedServerEOS" }
+
+        assertEquals(UnrealTargetType.Server, target.type)
+        assertTrue(target.usesUniqueBuildEnvironment)
+    }
+
+    @Test
     fun `reports missing unreal project structure`() {
         val root = temporaryFolder.newFolder("PlainProject").toPath()
 

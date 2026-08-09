@@ -15,4 +15,6 @@ class UnrealProjectStartupActivity : ProjectActivity {
 }
 
 internal fun shouldRefreshProjectOnStartup(settings: UnrealHelperSettings): Boolean =
-    !settings.hasConfiguredProject() || settings.state.engineRoot.isBlank()
+    settings.state.discoveryVersion < UnrealHelperSettings.CurrentDiscoveryVersion ||
+        !settings.hasConfiguredProject() ||
+        settings.state.engineRoot.isBlank()
