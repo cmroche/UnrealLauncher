@@ -9,6 +9,7 @@ enum class UnrealTargetType {
     Game,
     Client,
     Server,
+    Editor,
 }
 
 data class DiscoveredUnrealTarget(
@@ -52,7 +53,7 @@ object UnrealProjectDiscovery {
         "IOS",
     )
     private val targetClassRegex = Regex("""class\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*TargetRules""")
-    private val targetTypeRegex = Regex("""TargetType\.(Game|Client|Server)\b""")
+    private val targetTypeRegex = Regex("""TargetType\.(Game|Client|Server|Editor)\b""")
     private val platformReferenceRegex = Regex("""UnrealTargetPlatform\.([A-Za-z0-9_]+)""")
 
     fun discover(projectBasePath: Path): UnrealProjectDiscoveryResult {
@@ -164,6 +165,7 @@ object UnrealProjectDiscovery {
         when {
             targetName.endsWith("Server", ignoreCase = true) -> UnrealTargetType.Server
             targetName.endsWith("Client", ignoreCase = true) -> UnrealTargetType.Client
+            targetName.endsWith("Editor", ignoreCase = true) -> UnrealTargetType.Editor
             else -> UnrealTargetType.Game
         }
 

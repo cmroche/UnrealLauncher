@@ -57,6 +57,18 @@ class UnrealProjectDiscoveryTest {
             """.trimIndent(),
         )
         Files.writeString(
+            root.resolve("Source").resolve("MyGameEditor.Target.cs"),
+            """
+            public class MyGameEditorTarget : TargetRules
+            {
+                public MyGameEditorTarget(TargetInfo Target) : base(Target)
+                {
+                    Type = TargetType.Editor;
+                }
+            }
+            """.trimIndent(),
+        )
+        Files.writeString(
             root.resolve("Source").resolve("MyGame.Build.cs"),
             "if (Target.Platform == UnrealTargetPlatform.Win64) { }",
         )
@@ -70,6 +82,7 @@ class UnrealProjectDiscoveryTest {
                 DiscoveredUnrealTarget("MyGame", UnrealTargetType.Game, "Source${File.separator}MyGame.Target.cs"),
                 DiscoveredUnrealTarget("MyGameClient", UnrealTargetType.Client, "Source${File.separator}MyGameClient.Target.cs"),
                 DiscoveredUnrealTarget("MyGameServer", UnrealTargetType.Server, "Source${File.separator}MyGameServer.Target.cs"),
+                DiscoveredUnrealTarget("MyGameEditor", UnrealTargetType.Editor, "Source${File.separator}MyGameEditor.Target.cs"),
             ),
             result.targets,
         )

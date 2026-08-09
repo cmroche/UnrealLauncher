@@ -251,7 +251,7 @@ class UnrealWorkflowPreflightValidatorTest {
     fun `unknown build configuration and unsupported inferred target type aggregate`() {
         val fixture = fixture()
         fixture.state.buildConfiguration = "Profile"
-        fixture.state.discoveredTargets.single().type = "Editor"
+        fixture.state.discoveredTargets.single().type = "Program"
 
         val errors = validator().validate(
             UnrealWorkflowRequest.BUILD,
@@ -264,7 +264,7 @@ class UnrealWorkflowPreflightValidatorTest {
         assertTrue(errors.any { it == "Build configuration 'Profile' is not supported" })
         assertTrue(errors.any {
             it.contains("Entry 1 LyraClient / Win64") &&
-                it.contains("target type 'Editor' is not supported; expected Game, Client, or Server")
+                it.contains("target type 'Program' is not supported; expected Game, Client, Server, or Editor")
         })
     }
 

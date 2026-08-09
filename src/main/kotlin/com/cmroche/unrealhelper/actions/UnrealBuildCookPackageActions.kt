@@ -14,6 +14,7 @@ import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPreflightResult
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPreflightValidator
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
+import com.cmroche.unrealhelper.workflow.incompatiblePlatformErrors
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -42,6 +43,13 @@ internal abstract class UnrealWorkflowAction(
         val error = submitSelectedWorkflow(selectedConfigurationResult) { selectedConfiguration ->
             UnrealWorkflowSubmitter(
                 execution = project.service<UnrealWorkflowExecutionService>(),
+                platformCompatibilityErrors = { configuration, state ->
+                    incompatiblePlatformErrors(
+                        configuration,
+                        state,
+                        RiderUnrealPlatformCompatibility.availableConfigurations(project),
+                    )
+                },
                 confirmRestart = { UnrealWorkflowConflictDialog.confirm(project, it) },
             ).submit(request, selectedConfiguration, settings.state, project.basePath)
         }
@@ -65,6 +73,10 @@ internal class UnrealWorkflowSubmitter(
         UnrealHelperSettingsState,
         String?,
     ) -> UnrealWorkflowPreflightResult = UnrealWorkflowPreflightValidator(plan = planner)::prepare,
+    private val platformCompatibilityErrors: (
+        TargetPlatformConfiguration,
+        UnrealHelperSettingsState,
+    ) -> List<String> = { _, _ -> emptyList() },
     private val confirmRestart: (UnrealWorkflowConflict) -> Boolean = { false },
 ) {
     fun submit(
@@ -73,6 +85,11 @@ internal class UnrealWorkflowSubmitter(
         state: UnrealHelperSettingsState,
         projectBasePath: String?,
     ): String? {
+        UnrealActionMessages.preflightError(
+            configuration.name,
+            platformCompatibilityErrors(configuration, state),
+        )?.let { return it }
+
         val result = preflight(request, configuration, state, projectBasePath)
         UnrealActionMessages.preflightError(configuration.name, result.errors)?.let { return it }
         val plan = result.plan ?: return UnrealActionMessages.preflightError(

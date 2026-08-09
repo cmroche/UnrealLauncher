@@ -71,6 +71,44 @@ class UnrealBuildCookPackageActionsTest {
     }
 
     @Test
+    fun `incompatible platform message prevents preflight and workflow submission`() {
+        val execution = RecordingExecution()
+        var preflightCalled = false
+
+        val error = UnrealWorkflowSubmitter(
+            execution = execution,
+            preflight = { _, _, _, _ ->
+                preflightCalled = true
+                UnrealWorkflowPreflightResult(null, emptyList())
+            },
+            platformCompatibilityErrors = { _, _ ->
+                listOf(
+                    "Entry 1 LyraEditor / Win64: platform 'Win64' is incompatible with target type 'Editor' " +
+                        "and build configuration 'Development' in the current Rider environment",
+                )
+            },
+        ).submit(
+            request = UnrealWorkflowRequest.BUILD,
+            configuration = TargetPlatformConfiguration(
+                name = "Editor",
+                entries = listOf(TargetPlatformEntry(targetName = "LyraEditor", platform = "Win64")),
+            ),
+            state = state(),
+            projectBasePath = "/Workspace/Lyra",
+        )
+
+        assertEquals(
+            "Target & Platform configuration 'Editor' cannot run:\n" +
+                "Entry 1 LyraEditor / Win64: platform 'Win64' is incompatible with target type 'Editor' " +
+                "and build configuration 'Development' in the current Rider environment",
+            error,
+        )
+        assertEquals(false, preflightCalled)
+        assertEquals(emptyList<UnrealExecutionPlan>(), execution.started)
+        assertEquals(emptyList<UnrealExecutionPlan>(), execution.restarted)
+    }
+
+    @Test
     fun `submitter validates and submits the same plan exactly once when state changes`() {
         val execution = RecordingExecution()
         val state = filesystemState()

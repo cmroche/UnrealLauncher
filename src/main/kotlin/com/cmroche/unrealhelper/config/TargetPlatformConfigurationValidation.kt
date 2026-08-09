@@ -81,7 +81,7 @@ fun resolveConfigurationEntries(
         val problems = buildList {
             if (target == null) add("build target is not discovered")
             if (target != null && targetType !in SupportedTargetTypes) {
-                add("target type '$targetType' is not supported; expected Game, Client, or Server")
+                add("target type '$targetType' is not supported; expected Game, Client, Server, or Editor")
             }
             if (platform !in discoveredPlatforms) add("platform is not discovered")
             if (entry.incrementalCookOnLaunch && !entry.cookOnLaunch) {
