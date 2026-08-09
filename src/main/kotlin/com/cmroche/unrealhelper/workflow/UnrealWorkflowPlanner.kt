@@ -36,7 +36,21 @@ class UnrealWorkflowPlanner {
             }
 
             UnrealWorkflowRequest.COOK -> buildList {
-                addPhase(UnrealPhase.COOK, fullCooks(artifacts))
+                addPhase(
+                    UnrealPhase.COOK,
+                    deduplicateCooks(
+                        entriesWithArtifacts.map { (entry, artifact) ->
+                            Cook(
+                                artifact = artifact,
+                                mode = if (entry.incrementalCookOnLaunch) {
+                                    UnrealCookMode.INCREMENTAL
+                                } else {
+                                    UnrealCookMode.FULL
+                                },
+                            )
+                        },
+                    ),
+                )
             }
 
             UnrealWorkflowRequest.PACKAGE -> buildList {

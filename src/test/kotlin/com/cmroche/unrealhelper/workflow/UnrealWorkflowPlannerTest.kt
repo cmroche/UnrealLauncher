@@ -157,14 +157,14 @@ class UnrealWorkflowPlannerTest {
     }
 
     @Test
-    fun `explicit cook and package requests always plan full cooks`() {
+    fun `explicit cook respects incremental selection while package remains full`() {
         val configuration = configuration(
             entry("LyraClient", "Win64", cookOnLaunch = true, incrementalCookOnLaunch = true),
         )
         val state = state(target("LyraClient", "Client"))
 
         assertEquals(
-            UnrealCookMode.FULL,
+            UnrealCookMode.INCREMENTAL,
             planner.plan(UnrealWorkflowRequest.COOK, configuration, state, null).actions<Cook>().single().mode,
         )
         assertEquals(
