@@ -285,6 +285,17 @@ class UnrealExecutionQueue(
                     failLocked(action, exitCode, command = runningAction.process.commandDescription)
                 }
             }
+
+            override fun failedToStart(exception: RuntimeException) = synchronized(lock) {
+                if (running !== runningAction || runningAction.handedOff) return@synchronized
+                running = null
+                failLocked(
+                    runningAction.action,
+                    PROCESS_START_FAILURE,
+                    exceptionDetail(runningAction.action, exception),
+                    runningAction.process.commandDescription,
+                )
+            }
         }
 
     private fun failLocked(

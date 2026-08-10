@@ -83,6 +83,23 @@ class UnrealExecutionQueueTest {
     }
 
     @Test
+    fun `asynchronous process start failure fails workflow and cancels waiting launch`() {
+        val client = launch(0)
+        val server = launch(1)
+        val fixture = fixture()
+
+        fixture.queue.start(plan(UnrealWorkflowRequest.LAUNCH, listOf(client, server)))
+        fixture.executor.current.failToStart(IllegalStateException("Run tool window unavailable"))
+
+        val result = fixture.presenters.single().finished.single() as UnrealPlanResult.Failure
+        assertEquals(UnrealPlanState.FAILED, fixture.queue.snapshot().state)
+        assertEquals(listOf(client), fixture.executor.createdActions)
+        assertEquals(listOf(server), result.cancelledActions)
+        assertTrue(result.detail.orEmpty().contains("Run tool window unavailable"))
+        assertTrue(result.detail.orEmpty().contains("Launch LyraClient"))
+    }
+
+    @Test
     fun `presenter receives the immutable plan as queued nodes before the first action starts`() {
         val build = BuildBatch(setOf(artifact))
         val cook = Cook(artifact, UnrealCookMode.FULL)
@@ -361,6 +378,8 @@ class UnrealExecutionQueueTest {
         }
 
         fun startSuccessfully() = listener.started()
+
+        fun failToStart(exception: RuntimeException) = listener.failedToStart(exception)
 
         fun terminate(exitCode: Int, remainsAlive: Boolean = false) {
             isProcessTerminating = false

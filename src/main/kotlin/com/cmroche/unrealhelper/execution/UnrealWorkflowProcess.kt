@@ -8,8 +8,10 @@ import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.process.ProcessOutputType
 import com.intellij.openapi.util.Key
 import com.intellij.execution.RunContentExecutor
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
+import javax.swing.SwingUtilities
 
 interface UnrealWorkflowProcessListener {
     fun started()
@@ -17,6 +19,8 @@ interface UnrealWorkflowProcessListener {
     fun output(text: String, outputType: ProcessOutputType)
 
     fun terminated(exitCode: Int)
+
+    fun failedToStart(exception: RuntimeException) = Unit
 }
 
 interface UnrealWorkflowProcess {
@@ -98,12 +102,20 @@ private class RiderRunUnrealWorkflowProcess(
 
     override fun start(listener: UnrealWorkflowProcessListener) {
         handler.addProcessListener(listener.asProcessListener())
-        RunContentExecutor(project, handler)
-            .withTitle(title)
-            .withStop(Runnable(::destroy), Computable(::canStop))
-            .withActivateToolWindow(true)
-            .withFocusToolWindow(true)
-            .run()
+        runOnEdt {
+            if (handler.isProcessTerminated || handler.isProcessTerminating) return@runOnEdt
+            try {
+                RunContentExecutor(project, handler)
+                    .withTitle(title)
+                    .withStop(Runnable(::destroy), Computable(::canStop))
+                    .withActivateToolWindow(true)
+                    .withFocusToolWindow(true)
+                    .run()
+            } catch (exception: RuntimeException) {
+                listener.failedToStart(exception)
+                destroy()
+            }
+        }
     }
 
     override fun destroy() {
@@ -128,3 +140,14 @@ private fun UnrealWorkflowProcessListener.asProcessListener(): ProcessListener =
             terminated(event.exitCode)
         }
     }
+
+internal fun runOnEdt(task: () -> Unit) {
+    val application = ApplicationManager.getApplication()
+    if (application == null) {
+        if (SwingUtilities.isEventDispatchThread()) task() else SwingUtilities.invokeLater(task)
+    } else if (application.isDispatchThread) {
+        task()
+    } else {
+        application.invokeLater(task)
+    }
+}

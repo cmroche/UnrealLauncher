@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import javax.swing.SwingUtilities
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -44,6 +45,25 @@ class UnrealWorkflowProcessTest {
         assertEquals(1, listener.exitCodes.size)
         assertTrue("destroy must not fabricate exit code zero", listener.exitCodes.single() != 0)
         assertTrue(process.isProcessTerminated)
+    }
+
+    @Test
+    fun `UI work submitted from a process callback runs on EDT`() {
+        val completed = CountDownLatch(1)
+        var ranOnEdt = false
+
+        val caller = Thread {
+            runOnEdt {
+                ranOnEdt = SwingUtilities.isEventDispatchThread()
+                completed.countDown()
+            }
+        }
+        caller.start()
+        caller.join(10_000)
+
+        assertFalse("caller thread did not finish", caller.isAlive)
+        assertTrue("EDT task did not run", completed.await(10, TimeUnit.SECONDS))
+        assertTrue("task did not run on EDT", ranOnEdt)
     }
 
     private fun shellCommand(script: String): UnrealCommand =
