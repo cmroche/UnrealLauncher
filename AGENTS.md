@@ -37,6 +37,15 @@ Run focused tests while iterating:
 ./gradlew test --tests 'com.cmroche.unrealhelper.command.UnrealCommandBuilderTest'
 ```
 
+## Versioning and commit conventions
+
+- Releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`) and are derived from Conventional Commit messages on `main`.
+- Pull requests must be squash merged. The PR title becomes the squash commit subject and must use the form `type(optional-scope): description`, such as `fix: reject editor targets during cook` or `feat(config): add shared launch presets`.
+- Intermediate commits within a pull request do not need Conventional Commit messages because squash merging replaces them with one commit on `main`. Verify the final squash commit message before merging.
+- Use `fix:` for a patch release, `feat:` for a minor release, and `type!:` or a `BREAKING CHANGE:` footer for a major release. Put a breaking-change footer in the PR body so it becomes part of the squash commit body.
+- Commits such as `docs:`, `test:`, and ordinary `chore:` changes do not create a release. Direct commits to `main` must follow the same Conventional Commit format.
+- Do not manually change the plugin version for routine work; release automation owns release versions unless a task explicitly concerns release bootstrapping or versioning infrastructure.
+
 ## Implementation conventions
 
 - Keep domain and command-building logic pure where possible. Use injected inputs such as paths, platform names, and OS names rather than directly reading IDE state; this keeps behavior unit-testable.
