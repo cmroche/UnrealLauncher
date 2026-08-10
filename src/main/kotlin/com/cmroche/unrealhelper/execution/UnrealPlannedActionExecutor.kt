@@ -39,7 +39,10 @@ internal class RiderUnrealPlannedActionExecutor(
         environment: UnrealExecutionEnvironment,
     ): UnrealWorkflowProcess = when (action) {
         is BuildBatch -> processFactory.create(
-            UnrealCommandBuilder.buildBatch(action.artifacts.map { context(it, environment) }),
+            UnrealCommandBuilder.buildBatch(
+                action.artifacts.map { context(it, environment) },
+                includePackagingTools = action.includePackagingTools,
+            ),
         )
         is Cook -> processFactory.create(
             UnrealCommandBuilder.cook(context(action.artifact, environment), action.mode, action.outputDirectory),

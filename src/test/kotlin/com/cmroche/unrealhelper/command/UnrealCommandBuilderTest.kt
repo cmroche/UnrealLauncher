@@ -41,6 +41,35 @@ class UnrealCommandBuilderTest {
     }
 
     @Test
+    fun `package build batch includes host UnrealPak for a source engine`() {
+        val command = UnrealCommandBuilder.buildBatch(
+            listOf(context(targetName = "LyraClient", targetType = "Client", platform = "Mac")),
+            includePackagingTools = true,
+            isEngineInstalled = false,
+            osName = "Mac OS X",
+        )
+
+        assertEquals("Unreal Build 2 target(s)", command.title)
+        assertEquals(
+            "-Target=UnrealPak Mac Development -Project=\"/Workspace/Lyra/Lyra.uproject\"",
+            command.arguments[1],
+        )
+    }
+
+    @Test
+    fun `package build batch uses prebuilt UnrealPak from an installed engine`() {
+        val command = UnrealCommandBuilder.buildBatch(
+            listOf(context(targetName = "LyraClient", targetType = "Client", platform = "Mac")),
+            includePackagingTools = true,
+            isEngineInstalled = true,
+            osName = "Mac OS X",
+        )
+
+        assertEquals("Unreal Build 1 target(s)", command.title)
+        assertTrue(command.arguments.none { it.contains("UnrealPak") })
+    }
+
+    @Test
     fun `cook targets the artifact and skips every other phase`() {
         val context = context(targetName = "LyraClient", targetType = "Client")
         val command = UnrealCommandBuilder.cook(

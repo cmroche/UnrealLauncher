@@ -38,24 +38,13 @@ class UnrealWorkflowPlanner {
             UnrealWorkflowRequest.COOK -> buildList {
                 addPhase(
                     UnrealPhase.COOK,
-                    deduplicateCooks(
-                        entriesWithArtifacts.map { (entry, artifact) ->
-                            Cook(
-                                artifact = artifact,
-                                mode = if (entry.incrementalCookOnLaunch) {
-                                    UnrealCookMode.INCREMENTAL
-                                } else {
-                                    UnrealCookMode.FULL
-                                },
-                            )
-                        },
-                    ),
+                    plannedCooks(entriesWithArtifacts),
                 )
             }
 
             UnrealWorkflowRequest.PACKAGE -> buildList {
-                addBuild(artifacts)
-                addPhase(UnrealPhase.COOK, fullCooks(artifacts))
+                addBuild(artifacts, includePackagingTools = true)
+                addPhase(UnrealPhase.COOK, plannedCooks(entriesWithArtifacts))
                 addPhase(UnrealPhase.STAGE, artifacts.map { Stage(it) })
                 val packageRoot = Path.of(state.packageDirectory.ifBlank {
                     UnrealHelperSettings.defaultPackageDirectory(workspaceRoot(state, projectPath))
@@ -127,9 +116,17 @@ class UnrealWorkflowPlanner {
             ?: projectPath.parent
             ?: error("Workspace root is not configured")
 
-    private fun MutableList<UnrealPlanPhase>.addBuild(artifacts: Set<UnrealArtifactKey>) {
+    private fun MutableList<UnrealPlanPhase>.addBuild(
+        artifacts: Set<UnrealArtifactKey>,
+        includePackagingTools: Boolean = false,
+    ) {
         if (artifacts.isNotEmpty()) {
-            add(UnrealPlanPhase(UnrealPhase.BUILD, listOf(BuildBatch(artifacts))))
+            add(
+                UnrealPlanPhase(
+                    UnrealPhase.BUILD,
+                    listOf(BuildBatch(artifacts, includePackagingTools)),
+                ),
+            )
         }
     }
 
@@ -142,8 +139,20 @@ class UnrealWorkflowPlanner {
         }
     }
 
-    private fun fullCooks(artifacts: Set<UnrealArtifactKey>): List<Cook> =
-        artifacts.map { Cook(it, UnrealCookMode.FULL) }
+    private fun plannedCooks(
+        entriesWithArtifacts: List<Pair<ResolvedTargetPlatformEntry, UnrealArtifactKey>>,
+    ): List<Cook> = deduplicateCooks(
+        entriesWithArtifacts.map { (entry, artifact) ->
+            Cook(
+                artifact = artifact,
+                mode = if (entry.incrementalCookOnLaunch) {
+                    UnrealCookMode.INCREMENTAL
+                } else {
+                    UnrealCookMode.FULL
+                },
+            )
+        },
+    )
 
     private fun deduplicateCooks(candidates: List<Cook>): List<Cook> =
         candidates.groupBy { it.artifact }.map { (_, cooks) ->

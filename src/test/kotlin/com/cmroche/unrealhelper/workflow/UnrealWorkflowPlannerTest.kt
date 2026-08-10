@@ -140,6 +140,7 @@ class UnrealWorkflowPlannerTest {
         val cooks = plan.actions<Cook>()
         val stages = plan.actions<Stage>()
         val packages = plan.actions<Package>()
+        assertTrue(plan.actions<BuildBatch>().single().includePackagingTools)
         assertEquals(2, cooks.map { it.outputDirectory }.distinct().size)
         assertEquals(2, stages.map { it.stagingDirectory }.distinct().size)
         assertEquals(2, packages.map { it.archiveDirectory }.distinct().size)
@@ -157,7 +158,7 @@ class UnrealWorkflowPlannerTest {
     }
 
     @Test
-    fun `explicit cook respects incremental selection while package remains full`() {
+    fun `explicit cook and package respect incremental selection`() {
         val configuration = configuration(
             entry("LyraClient", "Win64", cookOnLaunch = true, incrementalCookOnLaunch = true),
         )
@@ -168,9 +169,24 @@ class UnrealWorkflowPlannerTest {
             planner.plan(UnrealWorkflowRequest.COOK, configuration, state, null).actions<Cook>().single().mode,
         )
         assertEquals(
-            UnrealCookMode.FULL,
+            UnrealCookMode.INCREMENTAL,
             planner.plan(UnrealWorkflowRequest.PACKAGE, configuration, state, null).actions<Cook>().single().mode,
         )
+    }
+
+    @Test
+    fun `full cook dominates incremental package cook for a duplicate artifact`() {
+        val plan = planner.plan(
+            UnrealWorkflowRequest.PACKAGE,
+            configuration(
+                entry("LyraClient", "Win64", cookOnLaunch = true, incrementalCookOnLaunch = true),
+                entry("LyraClient", "Win64"),
+            ),
+            state(target("LyraClient", "Client")),
+            null,
+        )
+
+        assertEquals(UnrealCookMode.FULL, plan.actions<Cook>().single().mode)
     }
 
     @Test

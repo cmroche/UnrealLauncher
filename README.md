@@ -29,7 +29,7 @@ Empty phases are omitted.
 
 - **Build** builds every unique target/platform artifact in one compatible UnrealBuildTool batch and ignores row Cook flags.
 - **Cook** cooks every unique artifact and honors each row's Incremental Cook selection. It does not build, stage, or package.
-- **Package** builds, fully cooks, stages, and packages every unique artifact beneath an isolated target directory in the configured package directory. Cook, staging, and archive state is never shared between exact targets.
+- **Package** builds every unique artifact and required packaging tools, then cooks each artifact using its Incremental Cook selection before staging and packaging it beneath an isolated target directory in the configured package directory. Cook, staging, and archive state is never shared between exact targets.
 - **Launch** builds every unique artifact, cooks only rows with Cook enabled, and launches every row. Launch never stages or packages.
 
 Repeated rows intentionally produce repeated Launch processes, while their identical build and cook prerequisites collapse. A full cook supersedes an otherwise identical incremental cook. Game, Client, and Server cooks remain distinct, as do different exact target names.

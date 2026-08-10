@@ -3,19 +3,33 @@ package com.cmroche.unrealhelper.command
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
 import com.cmroche.unrealhelper.workflow.artifactCookDirectory
 import com.cmroche.unrealhelper.workflow.artifactStageDirectory
+import java.nio.file.Files
 import java.nio.file.Path
 
 object UnrealCommandBuilder {
     fun buildBatch(
         contexts: List<UnrealCommandContext>,
+        includePackagingTools: Boolean = false,
+        isEngineInstalled: Boolean? = null,
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand {
         require(contexts.isNotEmpty())
-        val targets = contexts.distinctBy { it.artifact }.map { context ->
+        val projectTargets = contexts.distinctBy { it.artifact }.map { context ->
             "-Target=${context.targetName} ${context.platform} ${context.buildConfiguration} " +
                 "-Project=${quoteNested(context.uprojectPath.toString())}"
         }
         val first = contexts.first()
+        val installedEngine = isEngineInstalled
+            ?: Files.exists(first.engineRoot.resolve("Engine/Build/InstalledBuild.txt"))
+        val packagingTargets = if (includePackagingTools && !installedEngine) {
+            listOf(
+                "-Target=UnrealPak ${hostPlatform(osName)} Development " +
+                    "-Project=${quoteNested(first.uprojectPath.toString())}",
+            )
+        } else {
+            emptyList()
+        }
+        val targets = projectTargets + packagingTargets
         return UnrealCommand(
             title = "Unreal Build ${targets.size} target(s)",
             executable = unrealBuildTool(first.engineRoot, osName),
@@ -135,6 +149,13 @@ object UnrealCommandBuilder {
 
     private fun isWindows(osName: String): Boolean =
         osName.startsWith("Windows", ignoreCase = true)
+
+    private fun hostPlatform(osName: String): String = when {
+        isWindows(osName) -> "Win64"
+        osName.startsWith("Mac", ignoreCase = true) -> "Mac"
+        osName.startsWith("Linux", ignoreCase = true) -> "Linux"
+        else -> error("Unsupported host operating system for packaging tools: $osName")
+    }
 
     private fun quoteNested(value: String): String = buildString {
         append('"')

@@ -26,6 +26,7 @@ sealed interface UnrealPlannedAction {
 
 data class BuildBatch(
     override val artifacts: Set<UnrealArtifactKey>,
+    val includePackagingTools: Boolean = false,
 ) : UnrealPlannedAction {
     override val phase: UnrealPhase = UnrealPhase.BUILD
 }
