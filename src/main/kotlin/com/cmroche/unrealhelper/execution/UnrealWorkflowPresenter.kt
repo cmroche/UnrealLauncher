@@ -9,6 +9,7 @@ import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.cmroche.unrealhelper.workflow.UnrealPhase
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
+import com.intellij.build.BuildDescriptor
 import com.intellij.build.BuildViewManager
 import com.intellij.build.DefaultBuildDescriptor
 import com.intellij.build.events.EventResult
@@ -95,7 +96,7 @@ private class BuildViewUnrealWorkflowPresenter(
         }
 
         rootProgress = BuildViewManager.createBuildProgress(project)
-            .start(BuildProgressDescriptorImpl(descriptor))
+            .start(unrealBuildProgressDescriptor(descriptor))
         val manager = project.getService(BuildViewManager::class.java)
         treeEvents = UnrealBuildTreeEventAdapter(descriptor.id, plan) { event ->
             manager.onEvent(descriptor.id, event)
@@ -129,6 +130,9 @@ private class BuildViewUnrealWorkflowPresenter(
     private fun events(): UnrealBuildTreeEventAdapter =
         treeEvents ?: error("Workflow presentation has not started")
 }
+
+internal fun unrealBuildProgressDescriptor(descriptor: BuildDescriptor): BuildProgressDescriptor =
+    BuildProgressDescriptorImpl("UE Launcher", descriptor)
 
 internal class UnrealBuildTreeEventAdapter(
     private val buildId: Any,
