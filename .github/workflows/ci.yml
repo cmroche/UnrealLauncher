@@ -23,6 +23,10 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-excludes: |
+            caches/*/transforms/**
+            caches/transforms-*/**
 
       - name: Test and build plugin
         run: ./gradlew test buildPlugin
@@ -33,4 +37,3 @@ jobs:
           name: UnrealHelper-plugin
           path: build/distributions/*.zip
           if-no-files-found: error
-
