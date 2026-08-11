@@ -9,6 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.nio.file.Files
+import java.nio.file.Path
 
 class TargetPlatformConfigurationServiceTest {
     @get:Rule
@@ -64,6 +66,93 @@ class TargetPlatformConfigurationServiceTest {
     }
 
     @Test
+    fun `save publishes cached configuration without reading file again`() {
+        val settings = settingsWithWorkspaceRoot()
+        val storage = CountingStorage(TargetPlatformConfigurationStore())
+        val service = TargetPlatformConfigurationService.createForTest(settings, storage)
+        val file = TargetPlatformConfigurationsFile(
+            configurations = listOf(TargetPlatformConfiguration("Game")),
+        )
+
+        service.save(file)
+
+        assertEquals(0, storage.loadCount)
+        assertEquals(1, storage.saveCount)
+        assertEquals(
+            file,
+            (service.load() as TargetPlatformConfigurationLoadResult.Loaded).file,
+        )
+    }
+
+    @Test
+    fun `cached reads and selection resolution do not reload configuration file`() {
+        val settings = settingsWithWorkspaceRoot().also {
+            it.state.selectedTargetPlatformConfigurationName = "Client"
+            it.state.discoveredPlatforms = mutableListOf("Win64")
+            it.state.discoveredTargets = mutableListOf(target("LyraClient", "Client"))
+        }
+        val file = TargetPlatformConfigurationsFile(
+            configurations = listOf(
+                TargetPlatformConfiguration(
+                    name = "Client",
+                    entries = listOf(TargetPlatformEntry(targetName = "LyraClient", platform = "Win64")),
+                ),
+            ),
+        )
+        val delegate = TargetPlatformConfigurationStore().also { store ->
+            store.save(requireNotNull(configurationPath(settings)), file)
+        }
+        val storage = CountingStorage(delegate)
+        val service = TargetPlatformConfigurationService.createForTest(settings, storage)
+        service.migrateLegacySelectionIfNeeded()
+
+        repeat(20) {
+            assertTrue(service.load() is TargetPlatformConfigurationLoadResult.Loaded)
+            assertTrue(service.selectedConfigurationResult() is SelectedTargetPlatformConfigurationResult.Valid)
+        }
+
+        assertEquals(1, storage.loadCount)
+    }
+
+    @Test
+    fun `configuration change scope includes exact file directory and atomic save files`() {
+        val configurationPath = temp.root.toPath()
+            .resolve(".unrealhelper")
+            .resolve("target-platforms.json")
+
+        assertTrue(
+            TargetPlatformConfigurationService.pathAffectsConfiguration(
+                configurationPath.toString(),
+                configurationPath,
+            ),
+        )
+        assertTrue(
+            TargetPlatformConfigurationService.pathAffectsConfiguration(
+                configurationPath.parent.resolve("target-platforms.json.123.tmp").toString(),
+                configurationPath,
+            ),
+        )
+        assertTrue(
+            TargetPlatformConfigurationService.pathAffectsConfiguration(
+                configurationPath.parent.toString(),
+                configurationPath,
+            ),
+        )
+        assertFalse(
+            TargetPlatformConfigurationService.pathAffectsConfiguration(
+                configurationPath.parent.resolveSibling(".idea").resolve("workspace.xml").toString(),
+                configurationPath,
+            ),
+        )
+        assertFalse(
+            TargetPlatformConfigurationService.pathAffectsConfiguration(
+                configurationPath.parent.resolveSibling(".unrealhelper-other").resolve("file.json").toString(),
+                configurationPath,
+            ),
+        )
+    }
+
+    @Test
     fun `legacy selected targets migrate to default shared config when file is missing`() {
         val settings = settingsWithWorkspaceRoot().also {
             it.state.selectedTargetTypes = mutableListOf("Game", "Server")
@@ -115,6 +204,26 @@ class TargetPlatformConfigurationServiceTest {
         result as TargetPlatformConfigurationLoadResult.Loaded
         assertEquals("Default", result.file.configurations.single().name)
         assertEquals("Default", settings.state.selectedTargetPlatformConfigurationName)
+    }
+
+    @Test
+    fun `legacy migration is not repeated after the first resolved path load`() {
+        val settings = settingsWithWorkspaceRoot().also {
+            it.state.selectedTargetTypes = mutableListOf("Game")
+            it.state.selectedPlatforms = mutableListOf("Win64")
+            it.state.discoveredTargets = mutableListOf(target("LyraGame", "Game"))
+        }
+        val service = TargetPlatformConfigurationService.createForTest(settings, TargetPlatformConfigurationStore())
+
+        service.migrateLegacySelectionIfNeeded()
+        val path = requireNotNull(service.configurationPath())
+        assertTrue(Files.exists(path))
+        Files.delete(path)
+
+        service.migrateLegacySelectionIfNeeded()
+
+        assertFalse(Files.exists(path))
+        assertTrue(service.load() is TargetPlatformConfigurationLoadResult.Missing)
     }
 
     @Test
@@ -197,9 +306,40 @@ class TargetPlatformConfigurationServiceTest {
         return settings
     }
 
+    private fun configurationPath(settings: UnrealHelperSettings): Path? =
+        TargetPlatformConfigurationService.createForTest(
+            settings,
+            TargetPlatformConfigurationStore(),
+        ).configurationPath()
+
     private fun target(name: String, type: String): UnrealTargetState =
         UnrealTargetState().also {
             it.name = name
             it.type = type
         }
+
+    private class CountingStorage(
+        private val delegate: TargetPlatformConfigurationStorage,
+    ) : TargetPlatformConfigurationStorage {
+        var loadCount: Int = 0
+            private set
+        var saveCount: Int = 0
+            private set
+
+        override fun load(
+            path: Path,
+            discoveredTargets: List<UnrealTargetState>,
+        ): TargetPlatformConfigurationLoadResult {
+            loadCount += 1
+            return delegate.load(path, discoveredTargets)
+        }
+
+        override fun save(
+            path: Path,
+            file: TargetPlatformConfigurationsFile,
+        ): TargetPlatformConfigurationLoadResult.Loaded {
+            saveCount += 1
+            return delegate.save(path, file)
+        }
+    }
 }

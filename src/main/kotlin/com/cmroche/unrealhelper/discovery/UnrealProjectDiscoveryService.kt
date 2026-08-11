@@ -1,5 +1,6 @@
 package com.cmroche.unrealhelper.discovery
 
+import com.cmroche.unrealhelper.config.TargetPlatformConfigurationService
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -152,6 +153,7 @@ class UnrealProjectDiscoveryService(
         ApplicationManager.getApplication().invokeLater {
             if (result != null && !project.isDisposed) {
                 project.service<UnrealHelperSettings>().applyDiscoveryResult(result)
+                project.service<TargetPlatformConfigurationService>().requestReload()
                 LOG.info(
                     "Loaded ${result.targets.size} Unreal targets and " +
                         "${result.platforms.size} platforms from the Rider project model",
