@@ -1,7 +1,10 @@
 import org.gradle.process.CommandLineArgumentProvider
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.BuildPluginTask
 import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
 
 plugins {
     kotlin("jvm") version "2.3.21"
@@ -10,7 +13,9 @@ plugins {
 }
 
 group = "com.cmroche"
-version = "0.1.0"
+
+val pluginVersion = providers.gradleProperty("pluginVersion").orElse("0.1.0")
+version = pluginVersion.get()
 
 val riderVersion = "2026.1.4"
 
@@ -39,6 +44,10 @@ dependencies {
 }
 
 intellijPlatform {
+    pluginConfiguration {
+        version = pluginVersion
+    }
+
     pluginVerification {
         ides {
             current()
@@ -58,6 +67,51 @@ kotlin {
 }
 
 tasks {
+    val buildPluginTask = named<BuildPluginTask>("buildPlugin") {
+        archiveFileName = pluginVersion.map { "UnrealLauncher-v$it.zip" }
+    }
+
+    register("verifyReleaseArtifact") {
+        group = "verification"
+        description = "Verifies the release archive name and packaged plugin version."
+        dependsOn(buildPluginTask)
+
+        val archiveFile = buildPluginTask.flatMap { it.archiveFile }
+        inputs.file(archiveFile)
+        inputs.property("expectedPluginVersion", pluginVersion)
+
+        doLast {
+            val expectedVersion = pluginVersion.get()
+            val archive = archiveFile.get().asFile
+            val expectedArchiveName = "UnrealLauncher-v$expectedVersion.zip"
+            check(archive.name == expectedArchiveName) {
+                "Expected release archive '$expectedArchiveName', found '${archive.name}'"
+            }
+
+            val pluginXml = ZipFile(archive).use { distributionZip ->
+                val expectedPluginJar = "UnrealHelper/lib/UnrealHelper-$expectedVersion.jar"
+                val pluginJarEntry = distributionZip.getEntry(expectedPluginJar)
+                    ?: error("Release archive does not contain '$expectedPluginJar'")
+
+                ZipInputStream(distributionZip.getInputStream(pluginJarEntry)).use { pluginJar ->
+                    generateSequence { pluginJar.nextEntry }
+                        .firstOrNull { it.name == "META-INF/plugin.xml" }
+                        ?: error("Packaged plugin JAR does not contain META-INF/plugin.xml")
+                    pluginJar.readBytes().decodeToString()
+                }
+            }
+
+            val packagedVersion = Regex("<version>\\s*([^<]+?)\\s*</version>")
+                .find(pluginXml)
+                ?.groupValues
+                ?.get(1)
+                ?: error("Packaged META-INF/plugin.xml does not contain a version")
+            check(packagedVersion == expectedVersion) {
+                "Expected packaged plugin version '$expectedVersion', found '$packagedVersion'"
+            }
+        }
+    }
+
     test {
         useJUnit()
     }

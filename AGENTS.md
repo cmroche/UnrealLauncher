@@ -42,9 +42,11 @@ Run focused tests while iterating:
 - Releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`) and are derived from Conventional Commit messages on `main`.
 - Pull requests must be squash merged. The PR title becomes the squash commit subject and must use the form `type(optional-scope): description`, such as `fix: reject editor targets during cook` or `feat(config): add shared launch presets`.
 - Intermediate commits within a pull request do not need Conventional Commit messages because squash merging replaces them with one commit on `main`. Verify the final squash commit message before merging.
-- Use `fix:` for a patch release, `feat:` for a minor release, and `type!:` or a `BREAKING CHANGE:` footer for a major release. Put a breaking-change footer in the PR body so it becomes part of the squash commit body.
-- Commits such as `docs:`, `test:`, and ordinary `chore:` changes do not create a release. Direct commits to `main` must follow the same Conventional Commit format.
+- Use `feat:` for a minor release; use `fix:`, `perf:`, or `revert:` for a patch release.
+- Use `type!:` or a `BREAKING CHANGE: description` footer for a major release. A title containing `!` must include that exact footer in the PR body so it becomes part of the squash commit body.
+- `build:`, `chore:`, `ci:`, `docs:`, `refactor:`, `style:`, and `test:` changes do not create a release. Direct commits to `main` must follow the same Conventional Commit format.
 - Do not manually change the plugin version for routine work; release automation owns release versions unless a task explicitly concerns release bootstrapping or versioning infrastructure.
+- PR title/body validation and plugin build checks are advisory until required branch-protection checks are available for this private repository. Confirm they pass before merging.
 
 ## Implementation conventions
 

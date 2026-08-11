@@ -1,55 +1,40 @@
-# UnrealHelper
+# Unreal Launcher (for Rider)
 
-UnrealHelper is a Rider plugin for coordinating Unreal Engine build, cook, package, and direct-launch workflows from a shared Target & Platform configuration.
+Rider plugin for coordinating Unreal Engine build, cook, package, and direct-launch workflows from a shared Target & Platform configuration.
 
-## Target & Platform Rows
+## Installation
 
-Shared configurations live in `.unrealhelper/target-platforms.json`. Each row selects:
+Download `UnrealLauncher-vX.Y.Z.zip` from the latest [GitHub Release](https://github.com/cmroche/UnrealHelper/releases). In Rider, open **Settings | Plugins**, choose **Install Plugin from Disk** from the gear menu, select the ZIP without extracting it, and restart Rider when prompted.
 
-```text
-Build Target | Platform | Arguments | Cook | Incremental Cook
-```
+## Using Unreal Launcher
 
-- **Build Target** is an exact discovered Unreal target such as `Lyra`, `LyraClient`, or `LyraServer`; its Game, Client, or Server type is inferred from discovery.
-- **Arguments** apply only to that row's launched process. The current toolbar global arguments are appended after them.
-- **Cook** requests a cook before Launch for that row.
-- **Incremental Cook** requests UAT incremental cooking and is available only when Cook is enabled. Unreal may invalidate prior data and perform a full cook internally.
+/coming soon/
 
-Missing or renamed targets remain visible for repair. Workflow preflight blocks invalid rows instead of silently replacing them. Executable and working-directory overrides are not part of the shared format.
+## Contributing
 
-## Toolbar Workflows
+### SemVer and Conventional Commit
 
-Every toolbar request is planned completely before execution, deduplicated by exact artifact identity, and run in phase order:
+Use `type(optional-scope): description` for the title. Release impact is:
 
-```text
-Build -> Cook -> Stage -> Package -> Launch
-```
+- `feat:` creates a minor release.
+- `fix:`, `perf:`, and `revert:` create a patch release.
+- `build:`, `chore:`, `ci:`, `docs:`, `refactor:`, `style:`, and `test:` create no release.
+- A title using `!`, or a body footer written exactly as `BREAKING CHANGE: description`, creates a major release. Titles using `!` must include that footer in the PR body.
 
-Empty phases are omitted.
+PR checks validate the title and body and run the plugin tests and build. These checks are advisory until required branch-protection checks are available for this private repository, so confirm they pass before squash merging.
 
-- **Build** builds every unique target/platform artifact in one compatible UnrealBuildTool batch and ignores row Cook flags.
-- **Cook** cooks every unique artifact and honors each row's Incremental Cook selection. It does not build, stage, or package.
-- **Package** builds every unique artifact and required packaging tools, then cooks each artifact using its Incremental Cook selection before staging and packaging it beneath an isolated target directory in the configured package directory. Cook, staging, and archive state is never shared between exact targets.
-- **Launch** builds every unique artifact, cooks only rows with Cook enabled, and launches every row. Launch never stages or packages.
+### Building
 
-Repeated rows intentionally produce repeated Launch processes, while their identical build and cook prerequisites collapse. A full cook supersedes an otherwise identical incremental cook. Game, Client, and Server cooks remain distinct, as do different exact target names.
+Run `gradlew build` from the plugin root directory to build the plugin. The plugin build runs these tests automatically.
 
-## Direct Launch
+### Testing
 
-After Build succeeds, Launch resolves the exact target receipt for the target name, platform, build configuration, and architecture when known. The receipt's `Launch` product is authoritative; receipt macros and project-relative paths are resolved against the configured engine and project roots. Engine-shared launch products receive the project path when required.
+Run the plugin tests with `gradlew test` from the plugin root directory. The plugin build runs these tests automatically.
 
-The freshly compiled receipt executable starts directly. With Cook enabled, UAT writes to a target- and role-specific cook output and the executable receives that loose cooked directory as its `-sandbox`; with Cook disabled it starts immediately after Build without a sandbox argument. Launch does not copy binaries, stage content, create a package, or search archived packages. If no matching receipt exists—or multiple architectures match while architecture is unknown—the workflow fails rather than guessing an executable.
+### Debugging
 
-## Progress, Failure, And Restart
+Run `gradlew runIde` from the plugin root directory to launch Rider with the plugin installed. The plugin build runs this automatically.
 
-Each request appears as one session in Rider's **Build** tool window, with phase and action nodes, state transitions, and raw UBT/UAT output. Launched games are tracked separately in the **Run** tool window and remain independently stoppable after the workflow session completes.
+### AI Policy
 
-Non-launch actions run sequentially. Launch processes are handed off to the running-launch registry as soon as each process starts, allowing the remaining launch rows to start without waiting for games to exit. If an action fails, every not-yet-started action is cleared and no additional launches start; already-started games are left running and tracked.
-
-Requesting Build, Cook, Package, or Launch while queue work or an artifact-conflicting game is active opens a confirmation with the running, queued, and conflicting launch entries:
-
-- **Stop and Restart** stops queue-owned work and conflicting games, waits for every stop to complete, then starts the new plan automatically.
-- **Keep Running**, closing, or cancelling the dialog discards the new request and preserves existing work.
-- If any process cannot be stopped, the replacement plan does not start.
-
-See [the design](docs/design.md) for the complete behavior and [manual validation](docs/manual-validation.md) for the approved Lyra scenarios.
+Use of AI is permitted, but all generated code must be self-reviewed for understanding, correctness, and verbosity before submitting a pull request.

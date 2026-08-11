@@ -1,7 +1,6 @@
 <idea-plugin>
   <id>com.cmroche.unrealhelper</id>
   <name>UnrealHelper</name>
-  <version>0.1.0</version>
   <vendor>com.cmroche</vendor>
 
   <description><![CDATA[
