@@ -13,12 +13,21 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
-class TargetPlatformConfigurationStore(
-    private val json: Json = DefaultJson,
-) {
+internal interface TargetPlatformConfigurationStorage {
     fun load(
         path: Path,
         discoveredTargets: List<UnrealTargetState> = emptyList(),
+    ): TargetPlatformConfigurationLoadResult
+
+    fun save(path: Path, file: TargetPlatformConfigurationsFile): TargetPlatformConfigurationLoadResult.Loaded
+}
+
+class TargetPlatformConfigurationStore(
+    private val json: Json = DefaultJson,
+) : TargetPlatformConfigurationStorage {
+    override fun load(
+        path: Path,
+        discoveredTargets: List<UnrealTargetState>,
     ): TargetPlatformConfigurationLoadResult {
         if (!Files.exists(path)) {
             return TargetPlatformConfigurationLoadResult.Missing(path)
@@ -54,15 +63,15 @@ class TargetPlatformConfigurationStore(
         }
     }
 
-    fun save(path: Path, file: TargetPlatformConfigurationsFile) {
+    override fun save(path: Path, file: TargetPlatformConfigurationsFile): TargetPlatformConfigurationLoadResult.Loaded {
         val parent = path.parent
         if (parent != null) {
             Files.createDirectories(parent)
         }
 
         val tempPath = Files.createTempFile(parent ?: Path.of("."), "${path.fileName}.", ".tmp")
+        val current = file.normalized().copy(version = TargetPlatformConfigurationsFile.CurrentVersion)
         try {
-            val current = file.normalized().copy(version = TargetPlatformConfigurationsFile.CurrentVersion)
             Files.writeString(tempPath, json.encodeToString(TargetPlatformConfigurationsFile.serializer(), current))
             try {
                 Files.move(tempPath, path, REPLACE_EXISTING, ATOMIC_MOVE)
@@ -75,6 +84,12 @@ class TargetPlatformConfigurationStore(
             } catch (_: IOException) {
             }
         }
+
+        return TargetPlatformConfigurationLoadResult.Loaded(
+            path = path,
+            file = current,
+            modifiedMillis = runCatching { Files.getLastModifiedTime(path).toMillis() }.getOrDefault(0L),
+        )
     }
 
     companion object {
