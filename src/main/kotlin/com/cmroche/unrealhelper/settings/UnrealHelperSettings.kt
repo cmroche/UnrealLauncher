@@ -46,8 +46,6 @@ class UnrealHelperSettingsState {
 class UnrealTargetState {
     var name: String = ""
     var type: String = UnrealTargetType.Game.name
-    var path: String = ""
-    var usesUniqueBuildEnvironment: Boolean = false
 }
 
 @Service(Service.Level.PROJECT)
@@ -118,7 +116,7 @@ class UnrealHelperSettings : PersistentStateComponent<UnrealHelperSettingsState>
     fun hasConfiguredProject(): Boolean = state.uprojectPath.isNotBlank()
 
     companion object {
-        const val CurrentDiscoveryVersion = 1
+        const val CurrentDiscoveryVersion = 2
         const val DefaultBuildConfiguration = "Development"
         val BuildConfigurations: List<String> = listOf("Debug", "DebugGame", "Development", "Test", "Shipping")
 
@@ -144,6 +142,4 @@ private fun DiscoveredUnrealTarget.toState(): UnrealTargetState =
     UnrealTargetState().also {
         it.name = name
         it.type = type.name
-        it.path = path
-        it.usesUniqueBuildEnvironment = usesUniqueBuildEnvironment
     }

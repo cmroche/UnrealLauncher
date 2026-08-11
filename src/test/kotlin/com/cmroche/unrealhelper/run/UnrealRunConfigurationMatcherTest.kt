@@ -107,12 +107,10 @@ class UnrealRunConfigurationMatcherTest {
                 UnrealTargetState().also { target ->
                     target.name = "MyGame"
                     target.type = "Game"
-                    target.path = "Source/MyGame.Target.cs"
                 },
                 UnrealTargetState().also { target ->
                     target.name = "MyGameServer"
                     target.type = "Server"
-                    target.path = "Source/MyGameServer.Target.cs"
                 },
             )
         }

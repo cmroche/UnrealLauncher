@@ -236,8 +236,8 @@ class UnrealHelperSettingsTest {
                 uprojectPath = "/Project/MyGame/MyGame.uproject",
                 engineRoot = null,
                 targets = listOf(
-                    DiscoveredUnrealTarget("MyGame", UnrealTargetType.Game, "Source/MyGame.Target.cs"),
-                    DiscoveredUnrealTarget("MyGameServer", UnrealTargetType.Server, "Source/MyGameServer.Target.cs"),
+                    DiscoveredUnrealTarget("MyGame", UnrealTargetType.Game),
+                    DiscoveredUnrealTarget("MyGameServer", UnrealTargetType.Server),
                 ),
                 platforms = listOf("Win64", "PS5"),
                 warnings = listOf("Example warning"),

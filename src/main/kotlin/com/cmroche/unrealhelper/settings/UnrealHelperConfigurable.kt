@@ -128,10 +128,13 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
 
     private fun discoveryPanel(): JPanel {
         val panel = sectionPanel("Detection")
-        val refreshButton = JButton("Refresh from Project Files")
+        val refreshButton = JButton("Refresh from Rider Model")
         refreshButton.addActionListener {
-            project.service<UnrealProjectDiscoveryService>().refresh()
-            reset()
+            refreshButton.isEnabled = false
+            project.service<UnrealProjectDiscoveryService>().refresh {
+                refreshButton.isEnabled = true
+                reset()
+            }
         }
 
         val top = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0))
@@ -184,7 +187,7 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             lines += "Targets: none detected"
         } else {
             lines += "Targets:"
-            lines += state.discoveredTargets.map { "- ${it.name} (${it.type}) ${it.path}" }
+            lines += state.discoveredTargets.map { "- ${it.name} (${it.type})" }
         }
 
         lines += "Platforms: ${state.discoveredPlatforms.joinToString(", ").ifBlank { "none detected" }}"

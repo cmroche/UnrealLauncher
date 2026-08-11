@@ -5,7 +5,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -15,195 +14,171 @@ class UnrealProjectDiscoveryTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun `discovers uproject targets and platforms from project files`() {
+    fun `uses Rider project target and platform data`() {
         val root = temporaryFolder.newFolder("MyGame").toPath()
-        Files.writeString(root.resolve("MyGame.uproject"), "{}")
-        Files.createDirectories(root.resolve("Source"))
-        Files.createDirectories(root.resolve("Platforms").resolve("PS5"))
-        Files.writeString(
-            root.resolve("Source").resolve("MyGame.Target.cs"),
-            """
-            public class MyGameTarget : TargetRules
-            {
-                public MyGameTarget(TargetInfo Target) : base(Target)
-                {
-                    Type = TargetType.Game;
-                }
-            }
-            """.trimIndent(),
+        val projectFile = Files.writeString(root.resolve("MyGame.uproject"), "{}")
+        val source = Files.createDirectories(root.resolve("Source"))
+        val gameTarget = writeTarget(
+            source.resolve("MyGame.Target.cs"),
+            "MyGameTarget",
+            "TargetRules",
+            "Game",
         )
-        Files.writeString(
-            root.resolve("Source").resolve("MyGameClient.Target.cs"),
-            """
-            public class MyGameClientTarget : TargetRules
-            {
-                public MyGameClientTarget(TargetInfo Target) : base(Target)
-                {
-                    Type = TargetType.Client;
-                }
-            }
-            """.trimIndent(),
-        )
-        Files.writeString(
-            root.resolve("Source").resolve("MyGameServer.Target.cs"),
-            """
-            public class MyGameServerTarget : TargetRules
-            {
-                public MyGameServerTarget(TargetInfo Target) : base(Target)
-                {
-                    Type = TargetType.Server;
-                }
-            }
-            """.trimIndent(),
-        )
-        Files.writeString(
-            root.resolve("Source").resolve("MyGameEditor.Target.cs"),
-            """
-            public class MyGameEditorTarget : TargetRules
-            {
-                public MyGameEditorTarget(TargetInfo Target) : base(Target)
-                {
-                    Type = TargetType.Editor;
-                }
-            }
-            """.trimIndent(),
-        )
-        Files.writeString(
-            root.resolve("Source").resolve("MyGame.Build.cs"),
-            "if (Target.Platform == UnrealTargetPlatform.Win64) { }",
+        val clientTarget = writeTarget(
+            source.resolve("MyGameClient.Target.cs"),
+            "MyGameClientTarget",
+            "TargetRules",
+            "Client",
         )
 
-        val result = UnrealProjectDiscovery.discover(root)
+        val result = UnrealProjectDiscovery.fromRiderModel(
+            uprojectPath = projectFile,
+            engineRoot = root.parent.resolve("UnrealEngine"),
+            targetFiles = listOf(gameTarget, clientTarget),
+            platforms = listOf("Win64", "Mac", "Win64"),
+        )
 
         assertEquals(root.toString(), result.workspaceRoot)
-        assertEquals(root.resolve("MyGame.uproject").toString(), result.uprojectPath)
+        assertEquals(projectFile.toString(), result.uprojectPath)
+        assertEquals(root.parent.resolve("UnrealEngine").toString(), result.engineRoot)
         assertEquals(
             listOf(
-                DiscoveredUnrealTarget("MyGame", UnrealTargetType.Game, "Source${File.separator}MyGame.Target.cs"),
-                DiscoveredUnrealTarget("MyGameClient", UnrealTargetType.Client, "Source${File.separator}MyGameClient.Target.cs"),
-                DiscoveredUnrealTarget("MyGameServer", UnrealTargetType.Server, "Source${File.separator}MyGameServer.Target.cs"),
-                DiscoveredUnrealTarget("MyGameEditor", UnrealTargetType.Editor, "Source${File.separator}MyGameEditor.Target.cs"),
+                DiscoveredUnrealTarget("MyGame", UnrealTargetType.Game),
+                DiscoveredUnrealTarget("MyGameClient", UnrealTargetType.Client),
             ),
             result.targets,
         )
-        assertEquals(listOf("Win64", "PS5"), result.platforms)
+        assertEquals(listOf("Mac", "Win64"), result.platforms)
         assertTrue(result.warnings.isEmpty())
     }
 
     @Test
-    fun `discovers engine root from source checkout containing project`() {
-        val engineRoot = temporaryFolder.newFolder("UnrealEngine").toPath()
-        val projectRoot = engineRoot.resolve("Samples").resolve("Games").resolve("MyGame")
-        createEngineToolFiles(engineRoot)
-        Files.createDirectories(projectRoot.resolve("Source"))
-        Files.writeString(projectRoot.resolve("MyGame.uproject"), "{}")
-        Files.writeString(
-            projectRoot.resolve("Source").resolve("MyGame.Target.cs"),
-            """
-            public class MyGameTarget : TargetRules
-            {
-                public MyGameTarget(TargetInfo Target) : base(Target)
-                {
-                    Type = TargetType.Game;
-                }
-            }
-            """.trimIndent(),
+    fun `resolves Rider logical target locations from the uproject directory`() {
+        val projectFile = Path.of("/Projects/Lyra/Lyra.uproject")
+
+        assertEquals(
+            Path.of("/Projects/Lyra/Source/LyraGame.Target.cs"),
+            resolveRiderTargetPath(
+                projectFile,
+                "/Projects/Lyra/LyraGame.Target.cs in <Lyra>/Source",
+            ),
         )
-
-        val result = UnrealProjectDiscovery.discover(projectRoot)
-
-        assertEquals(engineRoot.toString(), result.engineRoot)
+        assertEquals(
+            Path.of("/Projects/Lyra/Source/LyraGame.Target.cs"),
+            resolveRiderTargetPath(projectFile, "Source/LyraGame.Target.cs"),
+        )
     }
 
     @Test
-    fun `discovers unique build environment from target files`() {
-        val root = temporaryFolder.newFolder("UniqueGame").toPath()
-        Files.writeString(root.resolve("UniqueGame.uproject"), "{}")
-        Files.createDirectories(root.resolve("Source"))
-        Files.writeString(
-            root.resolve("Source").resolve("UniqueGameClient.Target.cs"),
-            """
-            public class UniqueGameClientTarget : TargetRules
-            {
-                public UniqueGameClientTarget(TargetInfo Target) : base(Target)
-                {
-                    Type = TargetType.Client;
-                    BuildEnvironment = TargetBuildEnvironment.Unique;
-                }
-            }
-            """.trimIndent(),
+    fun `does not discover target files Rider did not return`() {
+        val root = temporaryFolder.newFolder("ScopedGame").toPath()
+        val projectFile = Files.writeString(root.resolve("ScopedGame.uproject"), "{}")
+        val source = Files.createDirectories(root.resolve("Source"))
+        val returnedTarget = writeTarget(
+            source.resolve("ScopedGame.Target.cs"),
+            "ScopedGameTarget",
+            "TargetRules",
+            "Game",
+        )
+        writeTarget(
+            source.resolve("IgnoredServer.Target.cs"),
+            "IgnoredServerTarget",
+            "TargetRules",
+            "Server",
         )
 
-        val result = UnrealProjectDiscovery.discover(root)
+        val targets = UnrealProjectDiscovery.fromRiderModel(
+            uprojectPath = projectFile,
+            engineRoot = null,
+            targetFiles = listOf(returnedTarget),
+            platforms = listOf("Win64"),
+        ).targets
 
-        assertEquals(true, result.targets.single().usesUniqueBuildEnvironment)
+        assertEquals(listOf("ScopedGame"), targets.map { it.name })
     }
 
     @Test
-    fun `inherits target type and unique build environment from base target`() {
+    fun `inherits target type from Rider supplied base target`() {
         val root = temporaryFolder.newFolder("InheritedGame").toPath()
-        Files.writeString(root.resolve("InheritedGame.uproject"), "{}")
-        Files.createDirectories(root.resolve("Source"))
-        Files.writeString(
-            root.resolve("Source").resolve("InheritedServer.Target.cs"),
-            """
-            public class InheritedServerTarget : TargetRules
-            {
-                public InheritedServerTarget(TargetInfo Target) : base(Target)
-                {
-                    Type = TargetType.Server;
-                    BuildEnvironment = TargetBuildEnvironment.Unique;
-                }
-            }
-            """.trimIndent(),
+        val projectFile = Files.writeString(root.resolve("InheritedGame.uproject"), "{}")
+        val source = Files.createDirectories(root.resolve("Source"))
+        val serverTarget = writeTarget(
+            source.resolve("InheritedServer.Target.cs"),
+            "InheritedServerTarget",
+            "TargetRules",
+            "Server",
         )
-        Files.writeString(
-            root.resolve("Source").resolve("InheritedServerEOS.Target.cs"),
-            """
-            public class InheritedServerEOSTarget : InheritedServerTarget
-            {
-                public InheritedServerEOSTarget(TargetInfo Target) : base(Target) { }
-            }
-            """.trimIndent(),
+        val variantTarget = writeTarget(
+            source.resolve("InheritedServerEOS.Target.cs"),
+            "InheritedServerEOSTarget",
+            "InheritedServerTarget",
+            null,
         )
 
-        val target = UnrealProjectDiscovery.discover(root).targets
-            .single { it.name == "InheritedServerEOS" }
+        val target = UnrealProjectDiscovery.fromRiderModel(
+            uprojectPath = projectFile,
+            engineRoot = null,
+            targetFiles = listOf(serverTarget, variantTarget),
+            platforms = listOf("Win64"),
+        ).targets.single { it.name == "InheritedServerEOS" }
 
         assertEquals(UnrealTargetType.Server, target.type)
-        assertTrue(target.usesUniqueBuildEnvironment)
     }
 
     @Test
-    fun `reports missing unreal project structure`() {
-        val root = temporaryFolder.newFolder("PlainProject").toPath()
+    fun `reports Rider model gaps and unreadable returned targets`() {
+        val root = temporaryFolder.newFolder("IncompleteGame").toPath()
+        val missingTarget = root.resolve("Source").resolve("Missing.Target.cs")
 
-        val result = UnrealProjectDiscovery.discover(root)
+        val result = UnrealProjectDiscovery.fromRiderModel(
+            uprojectPath = null,
+            engineRoot = null,
+            targetFiles = listOf(missingTarget),
+            platforms = emptyList(),
+        )
 
-        assertEquals(root.toString(), result.workspaceRoot)
-        assertEquals(null, result.uprojectPath)
+        assertEquals(null, result.workspaceRoot)
         assertTrue(result.targets.isEmpty())
-        assertTrue(result.platforms.isNotEmpty())
-        assertTrue(result.warnings.any { it.contains("No .uproject file") })
-        assertTrue(result.warnings.any { it.contains("No Source directory") })
+        assertTrue(result.warnings.any { it.contains("did not provide an Unreal project file") })
+        assertTrue(result.warnings.any { it.contains("did not provide any Unreal target files") })
+        assertTrue(result.warnings.any { it.contains("did not provide any Unreal target platforms") })
     }
 
-    private fun createEngineToolFiles(engineRoot: Path) {
-        val unrealBuildTool = engineRoot
-            .resolve("Engine")
-            .resolve("Binaries")
-            .resolve("DotNET")
-            .resolve("UnrealBuildTool")
-            .resolve("UnrealBuildTool")
-        val runUat = engineRoot
-            .resolve("Engine")
-            .resolve("Build")
-            .resolve("BatchFiles")
-            .resolve("RunUAT.sh")
+    @Test
+    fun `reports a returned target file that cannot be read`() {
+        val root = temporaryFolder.newFolder("MissingTargetGame").toPath()
+        val projectFile = Files.writeString(root.resolve("MissingTargetGame.uproject"), "{}")
+        val missingTarget = root.resolve("Source").resolve("Missing.Target.cs")
 
-        Files.createDirectories(unrealBuildTool.parent)
-        Files.createDirectories(runUat.parent)
-        Files.writeString(unrealBuildTool, "")
-        Files.writeString(runUat, "")
+        val result = UnrealProjectDiscovery.fromRiderModel(
+            uprojectPath = projectFile,
+            engineRoot = null,
+            targetFiles = listOf(missingTarget),
+            platforms = listOf("Win64"),
+        )
+
+        assertTrue(result.targets.isEmpty())
+        assertTrue(result.warnings.any { it.contains("Could not read Rider target file") })
+    }
+
+    private fun writeTarget(
+        path: java.nio.file.Path,
+        className: String,
+        baseClassName: String,
+        targetType: String?,
+    ): java.nio.file.Path {
+        val typeAssignment = targetType?.let { "Type = TargetType.$it;" }.orEmpty()
+        return Files.writeString(
+            path,
+            """
+            public class $className : $baseClassName
+            {
+                public $className(TargetInfo Target) : base(Target)
+                {
+                    $typeAssignment
+                }
+            }
+            """.trimIndent(),
+        )
     }
 }
