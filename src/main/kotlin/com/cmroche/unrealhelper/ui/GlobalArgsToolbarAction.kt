@@ -2,10 +2,9 @@ package com.cmroche.unrealhelper.ui
 
 import com.cmroche.unrealhelper.run.RunConfigurationMatchData
 import com.cmroche.unrealhelper.run.UnrealRunConfigurationMatcher
-import com.cmroche.unrealhelper.discovery.UnrealProjectDiscovery
+import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryService
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
-import com.cmroche.unrealhelper.settings.UnrealTargetState
 import com.intellij.icons.AllIcons
 import com.intellij.ide.DataManager
 import com.intellij.execution.RunManager
@@ -16,16 +15,15 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.Presentation
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.components.service
-import com.intellij.openapi.util.Key
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.util.Key
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.fields.ExtendableTextComponent
 import com.intellij.ui.components.fields.ExtendableTextField
 import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
-import java.nio.file.Paths
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
 import javax.swing.JComboBox
@@ -188,7 +186,6 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
 
     private companion object {
         private const val CommandLineInputWidth = 330
-        private val CompatibilityStateKey = Key.create<UnrealHelperSettingsState>("UnrealHelper.compatibilityState")
         private val ProjectKey = Key.create<Project>("UnrealHelper.globalArgsProject")
 
         fun toolbarBackground() = JBColor.namedColor("MainToolbar.background", UIUtil.getPanelBackground())
@@ -199,31 +196,8 @@ class GlobalArgsToolbarAction : DumbAwareAction("UnrealHelper Args"), CustomComp
                 return state
             }
 
-            val cachedState = project.getUserData(CompatibilityStateKey)
-            if (cachedState != null) {
-                return cachedState.takeIf(UnrealRunConfigurationMatcher::hasUnrealProjectContext)
-            }
-
-            val discoveredState = discoverCompatibilityState(project)
-            project.putUserData(CompatibilityStateKey, discoveredState)
-            return discoveredState.takeIf(UnrealRunConfigurationMatcher::hasUnrealProjectContext)
-        }
-
-        private fun discoverCompatibilityState(project: Project): UnrealHelperSettingsState {
-            val basePath = project.basePath ?: return UnrealHelperSettingsState()
-            val result = UnrealProjectDiscovery.discover(Paths.get(basePath))
-            return UnrealHelperSettingsState().also { state ->
-                state.workspaceRoot = result.workspaceRoot.orEmpty()
-                state.uprojectPath = result.uprojectPath.orEmpty()
-                state.discoveredTargets = result.targets.map { target ->
-                    UnrealTargetState().also {
-                        it.name = target.name
-                        it.type = target.type.name
-                        it.path = target.path
-                        it.usesUniqueBuildEnvironment = target.usesUniqueBuildEnvironment
-                    }
-                }.toMutableList()
-            }
+            project.service<UnrealProjectDiscoveryService>().refresh()
+            return null
         }
     }
 }
