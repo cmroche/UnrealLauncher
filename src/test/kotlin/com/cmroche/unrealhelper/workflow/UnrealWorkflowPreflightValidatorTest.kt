@@ -196,8 +196,8 @@ class UnrealWorkflowPreflightValidatorTest {
     @Test
     fun `rejects an empty plan`() {
         val fixture = fixture()
-        val validator = UnrealWorkflowPreflightValidator(plan = { request, configuration, state, basePath ->
-            UnrealWorkflowPlanner().plan(request, configuration, state, basePath).copy(phases = emptyList())
+        val validator = UnrealWorkflowPreflightValidator(plan = { inputs ->
+            UnrealWorkflowPlanner().plan(inputs).copy(phases = emptyList())
         })
 
         assertEquals(
@@ -214,8 +214,8 @@ class UnrealWorkflowPreflightValidatorTest {
     @Test
     fun `rejects phases outside canonical order`() {
         val fixture = fixture(cookOnLaunch = true)
-        val validator = UnrealWorkflowPreflightValidator(plan = { request, configuration, state, basePath ->
-            val valid = UnrealWorkflowPlanner().plan(request, configuration, state, basePath)
+        val validator = UnrealWorkflowPreflightValidator(plan = { inputs ->
+            val valid = UnrealWorkflowPlanner().plan(inputs)
             valid.copy(phases = valid.phases.reversed())
         })
 
@@ -236,8 +236,8 @@ class UnrealWorkflowPreflightValidatorTest {
     fun `validates tools from immutable plan environment`() {
         val fixture = fixture()
         val plannedEngineRoot = Files.createDirectories(fixture.workspace.resolve("PlannedEngineRoot"))
-        val validator = UnrealWorkflowPreflightValidator(plan = { request, configuration, state, basePath ->
-            val valid = UnrealWorkflowPlanner().plan(request, configuration, state, basePath)
+        val validator = UnrealWorkflowPreflightValidator(plan = { inputs ->
+            val valid = UnrealWorkflowPlanner().plan(inputs)
             valid.copy(environment = valid.environment.copy(engineRoot = plannedEngineRoot))
         })
 

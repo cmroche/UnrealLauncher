@@ -1,12 +1,9 @@
 package com.cmroche.unrealhelper.workflow
 
 import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
-import com.cmroche.unrealhelper.config.resolveConfigurationEntries
 import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
-import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import java.nio.file.Files
-import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
 data class UnrealWorkflowPreflightResult(
@@ -15,12 +12,7 @@ data class UnrealWorkflowPreflightResult(
 )
 
 class UnrealWorkflowPreflightValidator(
-    private val plan: (
-        UnrealWorkflowRequest,
-        TargetPlatformConfiguration,
-        UnrealHelperSettingsState,
-        String?,
-    ) -> UnrealExecutionPlan = UnrealWorkflowPlanner()::plan,
+    private val plan: (ResolvedUnrealWorkflowInputs) -> UnrealExecutionPlan = UnrealWorkflowPlanner()::plan,
     private val osName: String = System.getProperty("os.name"),
 ) {
     fun validate(
@@ -36,53 +28,15 @@ class UnrealWorkflowPreflightValidator(
         state: UnrealHelperSettingsState,
         projectBasePath: String?,
     ): UnrealWorkflowPreflightResult {
-        val errors = mutableListOf<String>()
-        val entryResolution = resolveConfigurationEntries(configuration, state)
-        errors += entryResolution.messages.map {
-            "Target & Platform configuration '${configuration.name}': $it"
-        }
-
-        val projectPath = resolveProjectPath(state.uprojectPath, projectBasePath)
-        when {
-            state.uprojectPath.isBlank() -> errors += "Project file is not configured"
-            projectPath == null -> errors += "Project file path is invalid: ${state.uprojectPath}"
-            !Files.isRegularFile(projectPath) -> errors += "Project file was not found at $projectPath"
-        }
-
-        val workspaceRoot = resolveWorkspaceRoot(state, projectPath, projectBasePath)
-        when {
-            workspaceRoot == null -> errors += "Workspace root is not configured"
-            !Files.isDirectory(workspaceRoot) -> errors += "Workspace root was not found at $workspaceRoot"
-        }
-
-        val engineRoot = pathOrNull(state.engineRoot)
-        when {
-            state.engineRoot.isBlank() -> errors += "Engine root is not configured"
-            engineRoot == null -> errors += "Engine root path is invalid: ${state.engineRoot}"
-            !Files.isDirectory(engineRoot) -> errors += "Engine root was not found at $engineRoot"
-        }
-
-        val buildConfigurationValid = state.buildConfiguration in UnrealHelperSettings.BuildConfigurations
-        if (!buildConfigurationValid) {
-            errors += "Build configuration '${state.buildConfiguration}' is not supported"
-        }
-        val packageDestinationValid = request != UnrealWorkflowRequest.PACKAGE || pathOrNull(
-            state.packageDirectory.ifBlank {
-                workspaceRoot?.let(UnrealHelperSettings::defaultPackageDirectory).orEmpty()
-            },
-        ) != null
-        if (!packageDestinationValid) {
-            errors += "Package destination path is invalid"
-        }
-
-        if (!entryResolution.isValid || projectPath == null || workspaceRoot == null || engineRoot == null ||
-            !buildConfigurationValid || !packageDestinationValid
-        ) {
+        val resolution = UnrealWorkflowInputResolver.resolve(request, configuration, state, projectBasePath)
+        val errors = resolution.errors.toMutableList()
+        val inputs = resolution.inputs
+        if (!resolution.isReady || inputs == null) {
             return UnrealWorkflowPreflightResult(null, errors)
         }
 
         val executionPlan = try {
-            plan(request, configuration, state, projectBasePath)
+            plan(inputs)
         } catch (exception: IllegalArgumentException) {
             errors += "Could not create workflow plan for configuration '${configuration.name}': ${exception.message}"
             return UnrealWorkflowPreflightResult(null, errors)
@@ -171,26 +125,6 @@ class UnrealWorkflowPreflightValidator(
             }
     }
 
-    private fun resolveProjectPath(uprojectPath: String, projectBasePath: String?): Path? {
-        val path = pathOrNull(uprojectPath) ?: return null
-        return when {
-            path.isAbsolute -> path.normalize()
-            !projectBasePath.isNullOrBlank() -> pathOrNull(projectBasePath)?.resolve(path)?.normalize()
-            else -> path.normalize()
-        }
-    }
-
-    private fun resolveWorkspaceRoot(
-        state: UnrealHelperSettingsState,
-        projectPath: Path?,
-        projectBasePath: String?,
-    ): Path? = when {
-        state.workspaceRoot.isNotBlank() -> pathOrNull(state.workspaceRoot)
-        projectPath?.parent != null -> projectPath.parent
-        !projectBasePath.isNullOrBlank() -> pathOrNull(projectBasePath)
-        else -> null
-    }
-
     private fun unrealBuildToolPath(engineRoot: Path): Path = engineRoot
         .resolve("Engine")
         .resolve("Binaries")
@@ -205,12 +139,6 @@ class UnrealWorkflowPreflightValidator(
         .resolve(if (isWindows()) "RunUAT.bat" else "RunUAT.sh")
 
     private fun isWindows(): Boolean = osName.startsWith("Windows", ignoreCase = true)
-
-    private fun pathOrNull(value: String): Path? = try {
-        value.takeIf(String::isNotBlank)?.let(Path::of)
-    } catch (_: InvalidPathException) {
-        null
-    }
 
     private fun MutableList<String>.addUnique(message: String) {
         if (message !in this) add(message)

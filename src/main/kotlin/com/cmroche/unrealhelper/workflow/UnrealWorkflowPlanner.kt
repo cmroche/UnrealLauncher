@@ -1,11 +1,8 @@
 package com.cmroche.unrealhelper.workflow
 
-import com.cmroche.unrealhelper.config.ResolvedTargetPlatformEntry
 import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
-import com.cmroche.unrealhelper.config.resolveConfigurationEntries
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
-import java.nio.file.Path
 
 class UnrealWorkflowPlanner {
     fun plan(
@@ -14,43 +11,40 @@ class UnrealWorkflowPlanner {
         state: UnrealHelperSettingsState,
         projectBasePath: String?,
     ): UnrealExecutionPlan {
-        val resolution = resolveConfigurationEntries(configuration, state)
-        require(resolution.isValid) {
-            "Cannot plan invalid configuration '${configuration.name}': ${resolution.messages.joinToString("; ")}"
+        require(state.buildConfiguration in UnrealHelperSettings.BuildConfigurations) {
+            "Unsupported build configuration '${state.buildConfiguration}'"
         }
+        val resolution = UnrealWorkflowInputResolver.resolve(request, configuration, state, projectBasePath)
+        val inputs = requireNotNull(resolution.inputs) {
+            "Cannot plan invalid configuration '${configuration.name}': ${resolution.errors.joinToString("; ")}"
+        }
+        return plan(inputs)
+    }
 
-        val projectPath = resolveProjectPath(state.uprojectPath, projectBasePath)
-        val buildConfiguration = effectiveBuildConfiguration(state)
-        val entriesWithArtifacts = resolution.entries.map { entry ->
-            entry to entry.toArtifact(projectPath, buildConfiguration)
-        }
-        val artifacts = entriesWithArtifacts
-            .map { it.second }
+    fun plan(inputs: ResolvedUnrealWorkflowInputs): UnrealExecutionPlan {
+        val artifacts = inputs.entries
+            .map { it.artifact }
             .distinct()
             .toCollection(linkedSetOf())
-        val globalArguments = state.activeCommandLine
 
-        val phases = when (request) {
+        val phases = when (inputs.request) {
             UnrealWorkflowRequest.BUILD -> buildList {
                 addBuild(artifacts)
             }
 
             UnrealWorkflowRequest.COOK -> buildList {
-                addPhase(
-                    UnrealPhase.COOK,
-                    plannedCooks(entriesWithArtifacts),
-                )
+                addPhase(UnrealPhase.COOK, plannedCooks(inputs.entries))
             }
 
             UnrealWorkflowRequest.PACKAGE -> buildList {
                 addBuild(artifacts, includePackagingTools = true)
-                addPhase(UnrealPhase.COOK, plannedCooks(entriesWithArtifacts))
+                addPhase(UnrealPhase.COOK, plannedCooks(inputs.entries))
                 addPhase(UnrealPhase.STAGE, artifacts.map { Stage(it) })
-                val packageRoot = Path.of(state.packageDirectory.ifBlank {
-                    UnrealHelperSettings.defaultPackageDirectory(workspaceRoot(state, projectPath))
-                })
                 addPhase(UnrealPhase.PACKAGE, artifacts.map {
-                    Package(it, archiveDirectory = packageRoot.resolve(artifactDirectoryName(it)))
+                    Package(
+                        it,
+                        archiveDirectory = inputs.environment.packageDirectory.resolve(artifactDirectoryName(it)),
+                    )
                 })
             }
 
@@ -59,7 +53,7 @@ class UnrealWorkflowPlanner {
                 addPhase(
                     UnrealPhase.COOK,
                     deduplicateCooks(
-                        entriesWithArtifacts.mapNotNull { (entry, artifact) ->
+                        inputs.entries.mapNotNull { (entry, artifact) ->
                             entry.takeIf { it.cookOnLaunch }?.let {
                                 Cook(
                                     artifact = artifact,
@@ -75,13 +69,13 @@ class UnrealWorkflowPlanner {
                 )
                 addPhase(
                     UnrealPhase.LAUNCH,
-                    entriesWithArtifacts.map { (entry, artifact) ->
+                    inputs.entries.map { (entry, artifact) ->
                         Launch(
                             artifact = artifact,
-                            configurationName = configuration.name,
+                            configurationName = inputs.configurationName,
                             rowIndex = entry.index,
                             entryArguments = entry.arguments,
-                            globalArguments = globalArguments,
+                            globalArguments = inputs.globalArguments,
                             cookedSandbox = artifactCookDirectory(artifact).takeIf { entry.cookOnLaunch },
                         )
                     },
@@ -89,32 +83,14 @@ class UnrealWorkflowPlanner {
             }
         }
 
-        val workspaceRoot = workspaceRoot(state, projectPath)
         return UnrealExecutionPlan(
-            request = request,
-            configurationName = configuration.name,
-            globalArguments = globalArguments,
-            environment = UnrealExecutionEnvironment(
-                engineRoot = Path.of(state.engineRoot),
-                workspaceRoot = workspaceRoot,
-                packageDirectory = if (request == UnrealWorkflowRequest.PACKAGE) {
-                    Path.of(
-                        state.packageDirectory.ifBlank {
-                            UnrealHelperSettings.defaultPackageDirectory(workspaceRoot)
-                        },
-                    )
-                } else {
-                    workspaceRoot.resolve("Packages")
-                },
-            ),
+            request = inputs.request,
+            configurationName = inputs.configurationName,
+            globalArguments = inputs.globalArguments,
+            environment = inputs.environment,
             phases = phases,
         )
     }
-
-    private fun workspaceRoot(state: UnrealHelperSettingsState, projectPath: Path): Path =
-        state.workspaceRoot.takeIf(String::isNotBlank)?.let(Path::of)
-            ?: projectPath.parent
-            ?: error("Workspace root is not configured")
 
     private fun MutableList<UnrealPlanPhase>.addBuild(
         artifacts: Set<UnrealArtifactKey>,
@@ -139,10 +115,8 @@ class UnrealWorkflowPlanner {
         }
     }
 
-    private fun plannedCooks(
-        entriesWithArtifacts: List<Pair<ResolvedTargetPlatformEntry, UnrealArtifactKey>>,
-    ): List<Cook> = deduplicateCooks(
-        entriesWithArtifacts.map { (entry, artifact) ->
+    private fun plannedCooks(entries: List<ResolvedUnrealWorkflowEntry>): List<Cook> = deduplicateCooks(
+        entries.map { (entry, artifact) ->
             Cook(
                 artifact = artifact,
                 mode = if (entry.incrementalCookOnLaunch) {
@@ -164,31 +138,4 @@ class UnrealWorkflowPlanner {
                 },
             )
         }
-
-    private fun ResolvedTargetPlatformEntry.toArtifact(
-        projectPath: Path,
-        buildConfiguration: String,
-    ): UnrealArtifactKey = UnrealArtifactKey(
-        projectPath = projectPath,
-        targetName = targetName,
-        targetType = targetType,
-        platform = platform,
-        buildConfiguration = buildConfiguration,
-    )
-
-    private fun resolveProjectPath(uprojectPath: String, projectBasePath: String?): Path {
-        val path = Path.of(uprojectPath)
-        return when {
-            path.isAbsolute -> path.normalize()
-            !projectBasePath.isNullOrBlank() -> Path.of(projectBasePath).resolve(path).normalize()
-            else -> path.normalize()
-        }
-    }
-
-    private fun effectiveBuildConfiguration(state: UnrealHelperSettingsState): String {
-        require(state.buildConfiguration in UnrealHelperSettings.BuildConfigurations) {
-            "Unsupported build configuration '${state.buildConfiguration}'"
-        }
-        return state.buildConfiguration
-    }
 }
