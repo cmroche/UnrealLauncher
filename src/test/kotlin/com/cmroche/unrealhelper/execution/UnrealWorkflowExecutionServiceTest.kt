@@ -1,8 +1,6 @@
 package com.cmroche.unrealhelper.execution
 
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
-import com.cmroche.unrealhelper.launch.QuickLaunchProcess
-import com.cmroche.unrealhelper.launch.QuickLaunchProcessFactory
 import com.cmroche.unrealhelper.launch.QuickLaunchProcessService
 import com.cmroche.unrealhelper.workflow.BuildBatch
 import com.cmroche.unrealhelper.workflow.Cook
@@ -14,7 +12,6 @@ import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlanPhase
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
-import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.ProcessOutputType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -279,14 +276,12 @@ class UnrealWorkflowExecutionServiceTest {
     private fun fixture(timeoutScheduler: UnrealRestartTimeoutScheduler = UnrealRestartTimeoutScheduler.NONE): Fixture {
         val executor = FakeExecutor()
         val queue = UnrealExecutionQueue(executor, { NoOpPresenter() }, timeoutScheduler = timeoutScheduler)
-        val launchFactory = FakeLaunchFactory()
-        val launchService = QuickLaunchProcessService.createForTest(launchFactory)
+        val launchService = QuickLaunchProcessService.createForTest()
         return Fixture(
             service = UnrealWorkflowExecutionService.createForTest(queue, launchService),
             queue = queue,
             executor = executor,
             launchService = launchService,
-            launchFactory = launchFactory,
         )
     }
 
@@ -308,12 +303,11 @@ class UnrealWorkflowExecutionServiceTest {
         val queue: UnrealExecutionQueue,
         val executor: FakeExecutor,
         val launchService: QuickLaunchProcessService,
-        val launchFactory: FakeLaunchFactory,
     ) {
-        fun launch(key: QuickLaunchKey, artifact: UnrealArtifactKey): FakeLaunchProcess {
-            launchService.launch(key, artifact, GeneralCommandLine("/tmp/Lyra"))
-            return launchFactory.processes.last()
-        }
+        fun launch(key: QuickLaunchKey, artifact: UnrealArtifactKey): RegisteredLaunchProcess =
+            RegisteredLaunchProcess(launchService::runningLaunchTerminated).also {
+                launchService.registerRunningLaunch(key, artifact, "test", it)
+            }
     }
 
     private class FakeExecutor : UnrealPlannedActionExecutor {
@@ -363,35 +357,26 @@ class UnrealWorkflowExecutionServiceTest {
         fun fire() { tasks.removeFirst().invoke() }
     }
 
-    private class FakeLaunchFactory : QuickLaunchProcessFactory {
-        val processes = mutableListOf<FakeLaunchProcess>()
-
-        override fun create(commandLine: GeneralCommandLine, title: String): QuickLaunchProcess =
-            FakeLaunchProcess().also(processes::add)
-    }
-
-    private class FakeLaunchProcess : QuickLaunchProcess {
-        private val listeners = mutableListOf<() -> Unit>()
-        private var terminated = false
+    private class RegisteredLaunchProcess(
+        private val terminated: (UnrealWorkflowProcess) -> Unit,
+    ) : UnrealWorkflowProcess {
+        override var isProcessTerminating = false
+        override var isProcessTerminated = false
         var destroyed = false
         var destroyFailure: RuntimeException? = null
 
-        override val isProcessTerminated: Boolean get() = terminated
+        override fun start(listener: UnrealWorkflowProcessListener) = Unit
 
         override fun destroy() {
             destroyed = true
             destroyFailure?.let { throw it }
+            isProcessTerminating = true
         }
-
-        override fun addTerminationListener(listener: () -> Unit) {
-            listeners += listener
-        }
-
-        override fun run() = Unit
 
         fun terminate() {
-            terminated = true
-            listeners.toList().forEach { it() }
+            isProcessTerminating = false
+            isProcessTerminated = true
+            terminated(this)
         }
     }
 

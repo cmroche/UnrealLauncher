@@ -3,15 +3,9 @@ package com.cmroche.unrealhelper.launch
 import com.cmroche.unrealhelper.execution.UnrealWorkflowProcess
 import com.cmroche.unrealhelper.execution.UnrealRestartTimeoutScheduler
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
-import com.intellij.execution.RunContentExecutor
-import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.execution.process.OSProcessHandler
-import com.intellij.execution.process.ProcessEvent
-import com.intellij.execution.process.ProcessListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Computable
 import java.util.IdentityHashMap
 
 data class QuickLaunchKey(
@@ -40,55 +34,14 @@ sealed class QuickLaunchStopResult {
 
 @Service(Service.Level.PROJECT)
 class QuickLaunchProcessService private constructor(
-    private val processFactory: QuickLaunchProcessFactory,
     private val timeoutScheduler: UnrealRestartTimeoutScheduler,
 ) : Disposable {
-    constructor(project: Project) : this(
-        RiderQuickLaunchProcessFactory(project),
-        UnrealRestartTimeoutScheduler.DEFAULT,
-    )
+    constructor(@Suppress("UNUSED_PARAMETER") project: Project) : this(UnrealRestartTimeoutScheduler.DEFAULT)
 
     private val lock = Any()
     private val runningProcesses = mutableMapOf<QuickLaunchInstanceId, TrackedLaunch>()
     private val workflowProcesses = IdentityHashMap<UnrealWorkflowProcess, QuickLaunchInstanceId>()
     private var nextInstanceId = 1L
-
-    fun launch(key: QuickLaunchKey, artifact: UnrealArtifactKey, commandLine: GeneralCommandLine) {
-        replaceDirectLaunch(key)
-
-        val title = title(key)
-        val process = processFactory.create(commandLine, title)
-        val instanceId = synchronized(lock) { nextInstanceIdLocked() }
-        process.addTerminationListener {
-            remove(instanceId, process)
-        }
-
-        try {
-            process.run()
-            synchronized(lock) {
-                if (!process.isProcessTerminated) {
-                    runningProcesses[instanceId] = TrackedLaunch(
-                        info = RunningLaunchInfo(key, artifact, title, instanceId),
-                        process = process,
-                    )
-                }
-            }
-        } catch (throwable: Throwable) {
-            remove(instanceId, process)
-            process.destroy()
-            throw throwable
-        }
-    }
-
-    private fun replaceDirectLaunch(key: QuickLaunchKey) {
-        val replaced = synchronized(lock) {
-            runningProcesses
-                .filterValues { it.info.key == key && it.process is QuickLaunchProcess }
-                .values
-                .map { it.process }
-        }
-        replaced.forEach { it.destroy() }
-    }
 
     internal fun registerRunningLaunch(
         key: QuickLaunchKey,
@@ -242,17 +195,6 @@ class QuickLaunchProcessService private constructor(
         }
     }
 
-    private fun remove(instanceId: QuickLaunchInstanceId, process: TrackedLaunchProcess) {
-        synchronized(lock) {
-            if (runningProcesses[instanceId]?.process === process) {
-                runningProcesses.remove(instanceId)
-            }
-        }
-    }
-
-    private fun title(key: QuickLaunchKey): String =
-        "Unreal ${key.configurationName} ${key.entryIndex + 1}: ${key.targetName} ${key.targetType} ${key.platform}"
-
     private fun nextInstanceIdLocked(): QuickLaunchInstanceId = QuickLaunchInstanceId(nextInstanceId++)
 
     private data class TrackedLaunch(
@@ -262,18 +204,12 @@ class QuickLaunchProcessService private constructor(
 
     companion object {
         internal fun createForTest(
-            processFactory: QuickLaunchProcessFactory,
             timeoutScheduler: UnrealRestartTimeoutScheduler = UnrealRestartTimeoutScheduler.NONE,
-        ): QuickLaunchProcessService = QuickLaunchProcessService(processFactory, timeoutScheduler)
+        ): QuickLaunchProcessService = QuickLaunchProcessService(timeoutScheduler)
     }
 }
 
-internal interface QuickLaunchProcessFactory {
-    fun create(commandLine: GeneralCommandLine, title: String): QuickLaunchProcess
-}
-
-internal interface TrackedLaunchProcess {
-    val identity: Any
+private interface TrackedLaunchProcess {
     val isProcessTerminated: Boolean
 
     fun destroy()
@@ -281,21 +217,11 @@ internal interface TrackedLaunchProcess {
     fun addTerminationListener(listener: () -> Unit)
 }
 
-internal interface QuickLaunchProcess : TrackedLaunchProcess {
-    override val identity: Any
-        get() = this
-
-    fun run()
-}
-
 private class WorkflowTrackedLaunchProcess(
     private val process: UnrealWorkflowProcess,
 ) : TrackedLaunchProcess {
     private val lock = Any()
     private val terminationListeners = mutableListOf<() -> Unit>()
-
-    override val identity: Any
-        get() = process
 
     override val isProcessTerminated: Boolean
         get() = process.isProcessTerminated
@@ -314,61 +240,4 @@ private class WorkflowTrackedLaunchProcess(
         }
         listeners.forEach { it() }
     }
-}
-
-private class RiderQuickLaunchProcessFactory(private val project: Project) : QuickLaunchProcessFactory {
-    override fun create(commandLine: GeneralCommandLine, title: String): QuickLaunchProcess =
-        RiderQuickLaunchProcess(
-            project = project,
-            handler = OSProcessHandler(commandLine),
-            title = title,
-        )
-}
-
-private class RiderQuickLaunchProcess(
-    private val project: Project,
-    private val handler: OSProcessHandler,
-    private val title: String,
-) : QuickLaunchProcess {
-    private val lock = Any()
-
-    override val isProcessTerminated: Boolean
-        get() = handler.isProcessTerminated
-
-    override fun destroy() {
-        synchronized(lock) {
-            ensureStartNotified()
-            if (!handler.isProcessTerminated && !handler.isProcessTerminating) {
-                handler.destroyProcess()
-            }
-        }
-    }
-
-    override fun addTerminationListener(listener: () -> Unit) {
-        handler.addProcessListener(
-            object : ProcessListener {
-                override fun processTerminated(event: ProcessEvent) {
-                    listener()
-                }
-            },
-        )
-    }
-
-    override fun run() {
-        RunContentExecutor(project, handler)
-            .withTitle(title)
-            .withStop(Runnable { destroy() }, Computable { canStop() })
-            .withActivateToolWindow(true)
-            .withFocusToolWindow(true)
-            .run()
-    }
-
-    private fun ensureStartNotified() {
-        if (!handler.isStartNotified) {
-            handler.startNotify()
-        }
-    }
-
-    private fun canStop(): Boolean =
-        !handler.isProcessTerminated && !handler.isProcessTerminating
 }
