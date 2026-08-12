@@ -1,14 +1,10 @@
 package com.cmroche.unrealhelper.execution
 
-import com.cmroche.unrealhelper.workflow.BuildBatch
-import com.cmroche.unrealhelper.workflow.Cook
 import com.cmroche.unrealhelper.workflow.Launch
-import com.cmroche.unrealhelper.workflow.Package
-import com.cmroche.unrealhelper.workflow.Stage
-import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
+import com.cmroche.unrealhelper.workflow.displayName
 import com.intellij.execution.process.ProcessOutputType
 import com.intellij.util.concurrency.AppExecutorUtil
 import java.util.ArrayDeque
@@ -343,28 +339,3 @@ class UnrealExecutionQueue(
         const val PROCESS_START_FAILURE = -1
     }
 }
-
-internal fun UnrealPlannedAction.displayName(): String =
-    when (this) {
-        is BuildBatch -> "Build ${artifacts.joinToString(separator = "; ") { it.descriptor() }}"
-        is Cook -> "Cook ${artifact.descriptor()} (${mode.name.lowercase()})"
-        is Stage -> "Stage ${artifact.descriptor()}"
-        is Package -> "Package ${artifact.descriptor()}"
-        is Launch -> "Launch ${artifact.descriptor()} ($configurationName)"
-    }
-
-private fun UnrealArtifactKey.descriptor(): String =
-    buildString {
-        append(targetName)
-        append(" [")
-        append(targetType)
-        append(", ")
-        append(platform)
-        append(", ")
-        append(buildConfiguration)
-        architecture?.let {
-            append(", ")
-            append(it)
-        }
-        append(']')
-    }

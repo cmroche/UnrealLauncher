@@ -4,8 +4,10 @@ import com.cmroche.unrealhelper.launch.QuickLaunchProcessService
 import com.cmroche.unrealhelper.launch.QuickLaunchStopResult
 import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.launch.RunningLaunchInfo
+import com.cmroche.unrealhelper.launch.launchTitle
 import com.cmroche.unrealhelper.workflow.Launch
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
+import com.cmroche.unrealhelper.workflow.displayName
 import com.intellij.execution.process.ProcessOutputType
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -100,7 +102,7 @@ class UnrealWorkflowExecutionService private constructor(
 
     override fun launchStarted(action: Launch, process: UnrealWorkflowProcess) {
         val key = action.quickLaunchKey()
-        launchService.registerRunningLaunch(key, action.artifact, title(key), process)
+        launchService.registerRunningLaunch(key, action.artifact, key.launchTitle(), process)
     }
 
     override fun launchOutput(
@@ -130,9 +132,6 @@ class UnrealWorkflowExecutionService private constructor(
             targetType = artifact.targetType,
             platform = artifact.platform,
         )
-
-    private fun title(key: QuickLaunchKey): String =
-        "Unreal ${key.configurationName} ${key.entryIndex + 1}: ${key.targetName} ${key.targetType} ${key.platform}"
 
     private class CompletionBarrier(
         private var parties: Int,

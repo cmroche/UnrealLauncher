@@ -15,6 +15,7 @@ import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.cmroche.unrealhelper.workflow.artifactDirectoryName
+import com.cmroche.unrealhelper.workflow.launchTitle
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.project.Project
 import java.nio.file.Path
@@ -68,7 +69,7 @@ internal class RiderUnrealPlannedActionExecutor(
         val artifact = receiptResolver(action.artifact, projectRoot, environment.engineRoot)
         return processFactory.createLaunch(
             UnrealLaunchCommandBuilder.build(action, artifact),
-            launchTitle(action),
+            action.launchTitle(),
         )
     }
 
@@ -83,10 +84,6 @@ internal class RiderUnrealPlannedActionExecutor(
             packageDirectory = environment.packageDirectory,
         )
     }
-
-    private fun launchTitle(action: Launch): String =
-        "Unreal ${action.configurationName} ${action.rowIndex + 1}: " +
-            "${action.artifact.targetName} ${action.artifact.targetType} ${action.artifact.platform}"
 }
 
 private class RiderUnrealPlannedActionProcessFactory(
