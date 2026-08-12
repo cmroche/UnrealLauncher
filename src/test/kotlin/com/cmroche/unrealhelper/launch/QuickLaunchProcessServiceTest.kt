@@ -1,283 +1,131 @@
 package com.cmroche.unrealhelper.launch
 
-import com.intellij.execution.configurations.GeneralCommandLine
+import com.cmroche.unrealhelper.execution.UnrealRestartTimeoutScheduler
+import com.cmroche.unrealhelper.execution.UnrealWorkflowProcess
+import com.cmroche.unrealhelper.execution.UnrealWorkflowProcessListener
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
-import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.nio.file.Path
 
 class QuickLaunchProcessServiceTest {
     @Test
     fun `same row workflow launches remain independently visible and stoppable`() {
-        val service = QuickLaunchProcessService.createForTest(FakeQuickLaunchProcessFactory())
+        val service = QuickLaunchProcessService.createForTest()
         val key = key(targetName = "LyraClient", targetType = "Client")
-        val first = TestWorkflowProcess()
-        val second = TestWorkflowProcess()
+        val first = register(service, key, artifact("LyraClient", "Client"), "first")
+        val second = register(service, key, artifact("LyraClient", "Client"), "second")
 
-        service.registerRunningLaunch(key, artifact("LyraClient", "Client"), "first", first)
-        service.registerRunningLaunch(key, artifact("LyraClient", "Client"), "second", second)
-
-        val running = service.runningLaunches()
-        assertEquals(2, running.size)
+        assertEquals(2, service.runningLaunches().size)
         service.stop(key)
         assertTrue(first.destroyed)
         assertTrue(second.destroyed)
 
-        service.runningLaunchTerminated(first)
+        first.terminate(service)
 
         assertEquals(listOf("second"), service.runningLaunches().map { it.title })
     }
 
     @Test
-    fun `launch tracks key and executor title`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
+    fun `stop destroys a tracked process until workflow termination removes it`() {
+        val service = QuickLaunchProcessService.createForTest()
         val key = key(targetName = "LyraGame", targetType = "Game")
+        val process = register(service, key, artifact("LyraGame", "Game"))
 
-        service.launch(key, artifact(targetName = "LyraGame", targetType = "Game"), commandLine())
-
-        assertTrue(service.isRunning(key))
-        assertEquals(setOf(key), service.runningKeys())
-        assertEquals(listOf("Unreal Default 1: LyraGame Game Win64"), factory.titles)
-        assertEquals(1, factory.processes.size)
-        assertTrue(factory.processes.single().started)
-    }
-
-    @Test
-    fun `relaunching same key stops previous handler and replaces it`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
-        val key = key(targetName = "LyraClient", targetType = "Client", platform = "Linux")
-
-        service.launch(key, artifact(targetName = "LyraClient", targetType = "Client", platform = "Linux"), commandLine())
-        val previous = factory.processes.single()
-        service.launch(key, artifact(targetName = "LyraClient", targetType = "Client", platform = "Linux"), commandLine())
-        val replacement = factory.processes.last()
-
-        assertTrue(previous.destroyed)
-        assertTrue(replacement.started)
-        assertFalse(replacement.destroyed)
-        assertTrue(service.isRunning(key))
-        assertEquals(setOf(key), service.runningKeys())
-        assertEquals(2, service.runningLaunches().size)
-
-        previous.terminate()
-
-        assertTrue(service.isRunning(key))
-        assertEquals(setOf(key), service.runningKeys())
-        assertEquals(1, service.runningLaunches().size)
-    }
-
-    @Test
-    fun `same key stop still reaches asynchronously destroying previous handler`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
-        val key = key(targetName = "LyraClient", targetType = "Client")
-        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
-
-        service.launch(key, artifact, commandLine())
-        service.launch(key, artifact, commandLine())
-        val previous = factory.processes.first()
-        val replacement = factory.processes.last()
-
-        service.stop(key)
-
-        assertEquals(2, previous.destroyRequests)
-        assertEquals(1, replacement.destroyRequests)
-    }
-
-    @Test
-    fun `dispose still reaches asynchronously destroying previous handler`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
-        val key = key(targetName = "LyraClient", targetType = "Client")
-        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
-
-        service.launch(key, artifact, commandLine())
-        service.launch(key, artifact, commandLine())
-        val previous = factory.processes.first()
-        val replacement = factory.processes.last()
-
-        service.dispose()
-
-        assertEquals(2, previous.destroyRequests)
-        assertEquals(1, replacement.destroyRequests)
-    }
-
-    @Test
-    fun `destroy failure aborts replacement and keeps previous handler tracked`() {
-        val destroyFailure = IllegalStateException("cannot destroy")
-        val previous = FakeQuickLaunchProcess(destroyFailure = destroyFailure)
-        val factory = FakeQuickLaunchProcessFactory { previous }
-        val service = QuickLaunchProcessService.createForTest(factory)
-        val key = key(targetName = "LyraClient", targetType = "Client")
-        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
-        service.launch(key, artifact, commandLine())
-
-        val thrown = assertThrows(IllegalStateException::class.java) {
-            service.launch(key, artifact, commandLine())
-        }
-
-        assertSame(destroyFailure, thrown)
-        assertEquals(1, factory.processes.size)
-        assertEquals(1, service.runningLaunches().size)
-        assertTrue(service.isRunning(key))
-    }
-
-    @Test
-    fun `termination callback removes the key`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
-        val key = key(targetName = "LyraServer", targetType = "Server", platform = "Mac")
-
-        service.launch(key, artifact(targetName = "LyraServer", targetType = "Server", platform = "Mac"), commandLine())
-        factory.processes.single().terminate()
-
-        assertFalse(service.isRunning(key))
-        assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
-    }
-
-    @Test
-    fun `launch failure removes tracked handler and destroys process`() {
-        val runFailure = IllegalStateException("executor failed")
-        val failingProcess = FakeQuickLaunchProcess(runFailure = runFailure)
-        val factory = FakeQuickLaunchProcessFactory { failingProcess }
-        val service = QuickLaunchProcessService.createForTest(factory)
-        val key = key(targetName = "LyraGame", targetType = "Game")
-
-        val thrown = assertThrows(IllegalStateException::class.java) {
-            service.launch(key, artifact(targetName = "LyraGame", targetType = "Game"), commandLine())
-        }
-
-        assertSame(runFailure, thrown)
-        assertTrue(failingProcess.destroyed)
-        assertFalse(service.isRunning(key))
-        assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
-    }
-
-    @Test
-    fun `stop removes tracked handler and destroys process`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
-        val key = key(targetName = "LyraGame", targetType = "Game")
-
-        service.launch(key, artifact(targetName = "LyraGame", targetType = "Game"), commandLine())
-        val process = factory.processes.single()
         service.stop(key)
 
         assertTrue(process.destroyed)
         assertTrue(service.isRunning(key))
-        process.terminate()
+        process.terminate(service)
         assertFalse(service.isRunning(key))
         assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
     }
 
     @Test
-    fun `stopAll removes tracked handlers and destroys processes`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
+    fun `stopAll destroys all tracked processes`() {
+        val service = QuickLaunchProcessService.createForTest()
         val game = key(targetName = "LyraGame", targetType = "Game")
         val server = key(entryIndex = 1, targetName = "LyraServer", targetType = "Server", platform = "Linux")
+        val gameProcess = register(service, game, artifact("LyraGame", "Game"))
+        val serverProcess = register(service, server, artifact("LyraServer", "Server", "Linux"))
 
-        service.launch(game, artifact(targetName = "LyraGame", targetType = "Game"), commandLine())
-        service.launch(server, artifact(targetName = "LyraServer", targetType = "Server", platform = "Linux"), commandLine())
         service.stopAll()
 
-        assertTrue(factory.processes.all { it.destroyed })
-        factory.processes.forEach { it.terminate() }
-        assertFalse(service.isRunning(game))
-        assertFalse(service.isRunning(server))
+        assertTrue(gameProcess.destroyed)
+        assertTrue(serverProcess.destroyed)
+        gameProcess.terminate(service)
+        serverProcess.terminate(service)
         assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
     }
 
     @Test
-    fun `dispose stops tracked handlers and clears running keys`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
+    fun `dispose stops tracked processes`() {
+        val service = QuickLaunchProcessService.createForTest()
         val game = key(targetName = "LyraGame", targetType = "Game")
         val server = key(entryIndex = 1, targetName = "LyraServer", targetType = "Server", platform = "Linux")
+        val processes = listOf(
+            register(service, game, artifact("LyraGame", "Game")),
+            register(service, server, artifact("LyraServer", "Server", "Linux")),
+        )
 
-        service.launch(game, artifact(targetName = "LyraGame", targetType = "Game"), commandLine())
-        service.launch(server, artifact(targetName = "LyraServer", targetType = "Server", platform = "Linux"), commandLine())
         service.dispose()
 
-        assertTrue(factory.processes.all { it.destroyed })
-        factory.processes.forEach { it.terminate() }
-        assertEquals(emptySet<QuickLaunchKey>(), service.runningKeys())
+        assertTrue(processes.all { it.destroyed })
     }
 
     @Test
     fun `duplicate target platform entries can run independently`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
-        val first = QuickLaunchKey(
-            configurationName = "Three Clients",
-            entryIndex = 0,
-            targetName = "LyraClient",
-            targetType = "Client",
-            platform = "Win64",
-        )
-        val second = QuickLaunchKey(
-            configurationName = "Three Clients",
-            entryIndex = 1,
-            targetName = "LyraClient",
-            targetType = "Client",
-            platform = "Win64",
-        )
+        val service = QuickLaunchProcessService.createForTest()
+        val first = QuickLaunchKey("Three Clients", 0, "LyraClient", "Client", "Win64")
+        val second = QuickLaunchKey("Three Clients", 1, "LyraClient", "Client", "Win64")
+        val artifact = artifact("LyraClient", "Client")
 
-        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
-        service.launch(first, artifact, GeneralCommandLine("first"))
-        service.launch(second, artifact, GeneralCommandLine("second"))
+        register(service, first, artifact)
+        register(service, second, artifact)
 
         assertEquals(setOf(first, second), service.runningKeys())
-        assertEquals(2, factory.processes.size)
+        assertEquals(2, service.runningLaunches().size)
     }
 
     @Test
     fun `running launches retain exact key artifact and title metadata`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
+        val service = QuickLaunchProcessService.createForTest()
         val key = key(targetName = "LyraClient", targetType = "Client")
-        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
+        val artifact = artifact("LyraClient", "Client")
+        val title = "Unreal Default 1: LyraClient Client Win64"
 
-        service.launch(key, artifact, commandLine())
+        register(service, key, artifact, title)
 
         val running = service.runningLaunches().single()
         assertEquals(key, running.key)
         assertEquals(artifact, running.artifact)
-        assertEquals("Unreal Default 1: LyraClient Client Win64", running.title)
+        assertEquals(title, running.title)
     }
 
     @Test
     fun `stop and wait invokes callback after every selected process terminates`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
+        val service = QuickLaunchProcessService.createForTest()
         val first = key(entryIndex = 0, targetName = "LyraClient", targetType = "Client")
         val second = key(entryIndex = 1, targetName = "LyraClient", targetType = "Client")
         val untouched = key(entryIndex = 2, targetName = "LyraServer", targetType = "Server")
-        val clientArtifact = artifact(targetName = "LyraClient", targetType = "Client")
-        service.launch(first, clientArtifact, commandLine())
-        service.launch(second, clientArtifact, commandLine())
-        service.launch(untouched, artifact(targetName = "LyraServer", targetType = "Server"), commandLine())
+        val firstProcess = register(service, first, artifact("LyraClient", "Client"))
+        val secondProcess = register(service, second, artifact("LyraClient", "Client"))
+        val untouchedProcess = register(service, untouched, artifact("LyraServer", "Server"))
         val callbacks = mutableListOf<QuickLaunchStopResult>()
 
-        service.stopAndWait(service.runningLaunches().filter { it.key in setOf(first, second) }) { result ->
-            callbacks += result
-        }
+        service.stopAndWait(service.runningLaunches().filter { it.key in setOf(first, second) }, callbacks::add)
 
-        assertTrue(factory.processes[0].destroyed)
-        assertTrue(factory.processes[1].destroyed)
-        assertFalse(factory.processes[2].destroyed)
+        assertTrue(firstProcess.destroyed)
+        assertTrue(secondProcess.destroyed)
+        assertFalse(untouchedProcess.destroyed)
         assertEquals(emptyList<QuickLaunchStopResult>(), callbacks)
 
-        factory.processes[0].terminate()
+        firstProcess.terminate(service)
         assertEquals(emptyList<QuickLaunchStopResult>(), callbacks)
 
-        factory.processes[1].terminate()
+        secondProcess.terminate(service)
         assertEquals(listOf(QuickLaunchStopResult.Completed), callbacks)
         assertEquals(setOf(untouched), service.runningKeys())
     }
@@ -285,19 +133,22 @@ class QuickLaunchProcessServiceTest {
     @Test
     fun `stop and wait latches destroy failure despite later natural termination`() {
         val destroyFailure = IllegalStateException("cannot destroy")
-        val process = FakeQuickLaunchProcess(destroyFailure = destroyFailure)
-        val service = QuickLaunchProcessService.createForTest(FakeQuickLaunchProcessFactory { process })
+        val service = QuickLaunchProcessService.createForTest()
         val key = key(targetName = "LyraClient", targetType = "Client")
-        service.launch(key, artifact(targetName = "LyraClient", targetType = "Client"), commandLine())
-        val selected = service.runningLaunches()
+        val process = register(
+            service,
+            key,
+            artifact("LyraClient", "Client"),
+            destroyFailure = destroyFailure,
+        )
         val results = mutableListOf<QuickLaunchStopResult>()
         var recoveries = 0
 
-        service.stopAndWait(selected, results::add) { recoveries++ }
+        service.stopAndWait(service.runningLaunches(), results::add) { recoveries++ }
 
         assertEquals(listOf(QuickLaunchStopResult.Failed(destroyFailure)), results)
 
-        process.terminate()
+        process.terminate(service)
 
         assertEquals(listOf(QuickLaunchStopResult.Failed(destroyFailure)), results)
         assertEquals(1, recoveries)
@@ -306,10 +157,9 @@ class QuickLaunchProcessServiceTest {
     @Test
     fun `stop and wait has a bounded timeout and recovers after exact termination`() {
         val timeouts = RecordingRestartTimeoutScheduler()
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory, timeouts)
+        val service = QuickLaunchProcessService.createForTest(timeouts)
         val key = key(targetName = "LyraClient", targetType = "Client")
-        service.launch(key, artifact("LyraClient", "Client"), commandLine())
+        val process = register(service, key, artifact("LyraClient", "Client"))
         val results = mutableListOf<QuickLaunchStopResult>()
         var recoveries = 0
 
@@ -317,21 +167,18 @@ class QuickLaunchProcessServiceTest {
         timeouts.fire()
 
         assertTrue((results.single() as QuickLaunchStopResult.Failed).cause.message.orEmpty().contains("Timed out"))
-        factory.processes.single().terminate()
+        process.terminate(service)
         assertEquals(1, recoveries)
     }
 
     @Test
     fun `stop and wait preserves newer launch that reused a captured key`() {
-        val factory = FakeQuickLaunchProcessFactory()
-        val service = QuickLaunchProcessService.createForTest(factory)
+        val service = QuickLaunchProcessService.createForTest()
         val key = key(targetName = "LyraClient", targetType = "Client")
-        val artifact = artifact(targetName = "LyraClient", targetType = "Client")
-        service.launch(key, artifact, commandLine())
+        val artifact = artifact("LyraClient", "Client")
+        val first = register(service, key, artifact, "first")
         val captured = service.runningLaunches()
-
-        service.launch(key, artifact, commandLine())
-        val replacement = factory.processes.last()
+        val replacement = register(service, key, artifact, "replacement")
         var result: QuickLaunchStopResult? = null
 
         service.stopAndWait(captured) { result = it }
@@ -340,10 +187,20 @@ class QuickLaunchProcessServiceTest {
         assertFalse(replacement.destroyed)
         assertEquals(2, service.runningLaunches().size)
 
-        factory.processes.first().terminate()
+        first.terminate(service)
 
         assertEquals(QuickLaunchStopResult.Completed, result)
-        assertEquals(listOf(key), service.runningLaunches().map { it.key })
+        assertEquals(listOf("replacement"), service.runningLaunches().map { it.title })
+    }
+
+    private fun register(
+        service: QuickLaunchProcessService,
+        key: QuickLaunchKey,
+        artifact: UnrealArtifactKey,
+        title: String = "test",
+        destroyFailure: RuntimeException? = null,
+    ): TestWorkflowProcess = TestWorkflowProcess(destroyFailure).also {
+        service.registerRunningLaunch(key, artifact, title, it)
     }
 
     private fun key(
@@ -364,77 +221,39 @@ class QuickLaunchProcessServiceTest {
         platform = platform,
         buildConfiguration = "Development",
     )
-
-    private fun commandLine(): GeneralCommandLine =
-        GeneralCommandLine("/tmp/MyGame")
 }
 
-private class RecordingRestartTimeoutScheduler : com.cmroche.unrealhelper.execution.UnrealRestartTimeoutScheduler {
+private class RecordingRestartTimeoutScheduler : UnrealRestartTimeoutScheduler {
     private val tasks = mutableListOf<() -> Unit>()
-    override fun schedule(task: () -> Unit) { tasks += task }
-    fun fire() { tasks.removeFirst().invoke() }
-}
 
-private class TestWorkflowProcess : com.cmroche.unrealhelper.execution.UnrealWorkflowProcess {
-    override val isProcessTerminating: Boolean = false
-    override val isProcessTerminated: Boolean = false
-    var destroyed = false
+    override fun schedule(task: () -> Unit) {
+        tasks += task
+    }
 
-    override fun start(listener: com.cmroche.unrealhelper.execution.UnrealWorkflowProcessListener) = Unit
-
-    override fun destroy() {
-        destroyed = true
+    fun fire() {
+        tasks.removeFirst().invoke()
     }
 }
 
-private class FakeQuickLaunchProcessFactory(
-    private val processProvider: () -> FakeQuickLaunchProcess = { FakeQuickLaunchProcess() },
-) : QuickLaunchProcessFactory {
-    val titles = mutableListOf<String>()
-    val processes = mutableListOf<FakeQuickLaunchProcess>()
-
-    override fun create(commandLine: GeneralCommandLine, title: String): QuickLaunchProcess {
-        titles += title
-        return processProvider().also { processes += it }
-    }
-}
-
-private class FakeQuickLaunchProcess(
-    private val runFailure: RuntimeException? = null,
+private class TestWorkflowProcess(
     private val destroyFailure: RuntimeException? = null,
-) : QuickLaunchProcess {
-    var destroyed: Boolean = false
+) : UnrealWorkflowProcess {
+    override var isProcessTerminating: Boolean = false
+    override var isProcessTerminated: Boolean = false
+    var destroyed = false
         private set
 
-    var destroyRequests: Int = 0
-        private set
-
-    var started: Boolean = false
-        private set
-
-    private var terminated: Boolean = false
-    private val terminationListeners = mutableListOf<() -> Unit>()
-
-    override val isProcessTerminated: Boolean
-        get() = terminated
+    override fun start(listener: UnrealWorkflowProcessListener) = Unit
 
     override fun destroy() {
-        destroyRequests += 1
         destroyed = true
         destroyFailure?.let { throw it }
+        isProcessTerminating = true
     }
 
-    override fun addTerminationListener(listener: () -> Unit) {
-        terminationListeners += listener
-    }
-
-    override fun run() {
-        runFailure?.let { throw it }
-        started = true
-    }
-
-    fun terminate() {
-        terminated = true
-        terminationListeners.forEach { it() }
+    fun terminate(service: QuickLaunchProcessService) {
+        isProcessTerminating = false
+        isProcessTerminated = true
+        service.runningLaunchTerminated(this)
     }
 }
