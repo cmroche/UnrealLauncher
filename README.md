@@ -1,6 +1,15 @@
 # Unreal Launcher (for Rider)
 
-Rider plugin for coordinating Unreal Engine build, cook, package, and direct-launch workflows from a shared Target & Platform configuration.
+Rider plugin for Unreal projects. **Unreal Launcher** is a utility that provides:
+
+- Easy access to commandline arguments for running/debugging your games
+- Configurable, and shareable, configurations to quickly build, cook and launch multiple targets at once. For example: Client and Server builds, without having to change to active target in Rider directly.
+
+_Why do I want this?_
+
+If you've worked on multiplayer games, you'll know how tedious it can be to switch from Editor to Client/Server for testing, especially since Rider doesn't support launch and debugging both Client and Server in a single IDE session. With **Unreal Launcher**, you configure sets of targets, such as "Client + Server", or "2x Client + Server" and use the quick actions in the toolbar to Cook and Run.
+
+Configurations are saved under `.UnrealHelper`, and can be submitted with your project for everyone to enjoy.
 
 ## Installation
 
