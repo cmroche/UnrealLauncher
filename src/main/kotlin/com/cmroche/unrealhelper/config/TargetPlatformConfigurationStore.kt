@@ -52,7 +52,6 @@ class TargetPlatformConfigurationStore(
             TargetPlatformConfigurationLoadResult.Loaded(
                 path,
                 decoded,
-                Files.getLastModifiedTime(path).toMillis(),
             )
         } catch (exception: SerializationException) {
             TargetPlatformConfigurationLoadResult.Malformed(path, exception.message ?: exception.javaClass.simpleName)
@@ -88,7 +87,6 @@ class TargetPlatformConfigurationStore(
         return TargetPlatformConfigurationLoadResult.Loaded(
             path = path,
             file = current,
-            modifiedMillis = runCatching { Files.getLastModifiedTime(path).toMillis() }.getOrDefault(0L),
         )
     }
 
@@ -107,7 +105,6 @@ sealed interface TargetPlatformConfigurationLoadResult {
     data class Loaded(
         override val path: Path,
         val file: TargetPlatformConfigurationsFile,
-        val modifiedMillis: Long,
     ) : TargetPlatformConfigurationLoadResult
 
     data class Missing(override val path: Path) : TargetPlatformConfigurationLoadResult

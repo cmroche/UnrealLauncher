@@ -62,8 +62,8 @@ class TargetPlatformEntryTableModelTest {
 
         model.setValueAt(false, 0, TargetPlatformEntryTableModel.CookColumn)
 
-        assertFalse(model.rows.single().cookOnLaunch)
-        assertFalse(model.rows.single().incrementalCookOnLaunch)
+        assertFalse(model.snapshot().single().cookOnLaunch)
+        assertFalse(model.snapshot().single().incrementalCookOnLaunch)
         assertFalse(model.isCellEditable(0, TargetPlatformEntryTableModel.IncrementalCookColumn))
         assertEquals("MissingSavedTarget", model.snapshot().single().targetName)
     }

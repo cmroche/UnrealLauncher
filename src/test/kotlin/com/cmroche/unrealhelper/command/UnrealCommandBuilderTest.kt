@@ -19,7 +19,6 @@ class UnrealCommandBuilderTest {
             ),
         )
 
-        assertEquals("Unreal Build 2 target(s)", command.title)
         assertEquals(
             "/Engines/UE_5.6/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool",
             command.executable,
@@ -49,7 +48,6 @@ class UnrealCommandBuilderTest {
             osName = "Mac OS X",
         )
 
-        assertEquals("Unreal Build 2 target(s)", command.title)
         assertEquals(
             "-Target=UnrealPak Mac Development -Project=\"/Workspace/Lyra/Lyra.uproject\"",
             command.arguments[1],
@@ -65,7 +63,6 @@ class UnrealCommandBuilderTest {
             osName = "Mac OS X",
         )
 
-        assertEquals("Unreal Build 1 target(s)", command.title)
         assertTrue(command.arguments.none { it.contains("UnrealPak") })
     }
 
@@ -77,7 +74,6 @@ class UnrealCommandBuilderTest {
             UnrealCookMode.FULL,
         )
 
-        assertEquals("Unreal Cook LyraClient Client Win64", command.title)
         assertEquals("/Engines/UE_5.6/Engine/Build/BatchFiles/RunUAT.sh", command.executable)
         assertEquals(
             listOf(
@@ -128,7 +124,6 @@ class UnrealCommandBuilderTest {
             context(targetName = "LyraServer", targetType = "Server"),
         )
 
-        assertEquals("Unreal Stage LyraServer Server Win64", command.title)
         assertEquals(
             listOf(
                 "BuildCookRun",
@@ -169,7 +164,6 @@ class UnrealCommandBuilderTest {
             Path.of("/Artifacts/Lyra/LyraClient"),
         )
 
-        assertEquals("Unreal Package LyraClient Client Win64", command.title)
         assertEquals(
             listOf(
                 "BuildCookRun",

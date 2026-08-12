@@ -33,14 +33,6 @@ class UnrealHelperSettingsState {
     var recentCommandLines: MutableList<String> = mutableListOf()
     var applyToRunDebug: Boolean = true
     var quickLaunchProfiles: MutableList<QuickLaunchProfileState> = mutableListOf()
-
-    fun profileFor(targetType: String, platform: String): QuickLaunchProfileState =
-        quickLaunchProfiles.firstOrNull { it.targetType == targetType && it.platform == platform }
-            ?: QuickLaunchProfileState(
-                name = "$targetType $platform",
-                targetType = targetType,
-                platform = platform,
-            ).also { quickLaunchProfiles.add(it) }
 }
 
 class UnrealTargetState {

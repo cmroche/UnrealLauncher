@@ -36,7 +36,10 @@ class TargetPlatformConfigurationValidationTest {
     @Test
     fun `missing selected name asks user to select configuration`() {
         val result = resolveSelectedTargetPlatformConfiguration(
-            loadResult = TargetPlatformConfigurationLoadResult.Loaded(Path.of("/Project/.unrealhelper/target-platforms.json"), TargetPlatformConfigurationsFile(), 1L),
+            loadResult = TargetPlatformConfigurationLoadResult.Loaded(
+                Path.of("/Project/.unrealhelper/target-platforms.json"),
+                TargetPlatformConfigurationsFile(),
+            ),
             selectedName = "",
             state = state(),
         )
@@ -50,7 +53,6 @@ class TargetPlatformConfigurationValidationTest {
             loadResult = TargetPlatformConfigurationLoadResult.Loaded(
                 Path.of("/Project/.unrealhelper/target-platforms.json"),
                 TargetPlatformConfigurationsFile(configurations = listOf(TargetPlatformConfiguration("Game Win64"))),
-                1L,
             ),
             selectedName = "Deleted Config",
             state = state(),
@@ -163,7 +165,6 @@ class TargetPlatformConfigurationValidationTest {
                         ),
                     ),
                 ),
-                1L,
             ),
             selectedName = "Game Win64",
             state = state(),
@@ -196,7 +197,6 @@ class TargetPlatformConfigurationValidationTest {
                 TargetPlatformConfigurationsFile(
                     configurations = listOf(TargetPlatformConfiguration("Test Config", entries)),
                 ),
-                1L,
             ),
             selectedName = "Test Config",
             state = state(),

@@ -8,7 +8,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.util.xmlb.XmlSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.awt.Component
@@ -162,20 +161,6 @@ class UnrealHelperSettingsTest {
         assertEquals("/Project/MyGame/Binaries/Win64/MyGame.exe", profile.executablePath)
         assertEquals("/Project/MyGame", profile.workingDirectory)
         assertEquals("-log", profile.arguments)
-    }
-
-    @Test
-    fun `profile helper returns existing profile or creates default for target platform pair`() {
-        val state = UnrealHelperSettingsState()
-
-        val createdProfile = state.profileFor("Server", "Linux")
-        val existingProfile = state.profileFor("Server", "Linux")
-
-        assertSame(createdProfile, existingProfile)
-        assertEquals("Server Linux", createdProfile.name)
-        assertEquals("Server", createdProfile.targetType)
-        assertEquals("Linux", createdProfile.platform)
-        assertEquals(listOf(createdProfile), state.quickLaunchProfiles)
     }
 
     @Test

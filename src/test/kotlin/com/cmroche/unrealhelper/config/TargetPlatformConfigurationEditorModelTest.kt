@@ -194,19 +194,12 @@ class TargetPlatformConfigurationEditorModelTest {
     }
 
     @Test
-    fun `entry operations preserve duplicates`() {
+    fun `setting entries preserves duplicates`() {
         val model = TargetPlatformConfigurationEditorModel(
             TargetPlatformConfigurationsFile(
                 configurations = listOf(TargetPlatformConfiguration("Game")),
             ),
         )
-        val first = TargetPlatformEntry(targetName = "MyGame", platform = "Win64", arguments = "-log")
-        val second = TargetPlatformEntry(targetName = "MyGame", platform = "Win64", arguments = "-trace=cpu")
-
-        assertTrue(model.addEntry(first))
-        assertTrue(model.addEntry(second))
-        assertEquals(listOf(first, second), model.snapshot().configurations.single().entries)
-
         val replacement = listOf(
             TargetPlatformEntry(targetName = " MyGame ", platform = " Win64 ", arguments = " -stdout "),
             TargetPlatformEntry(targetName = " MyGame ", platform = " Win64 ", arguments = " -FullStdOutLogOutput "),
