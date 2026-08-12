@@ -18,6 +18,7 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.util.Key
 import com.intellij.util.ui.UIUtil
 import java.awt.Font
 import java.beans.PropertyChangeEvent
@@ -25,8 +26,10 @@ import javax.swing.JComponent
 
 class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
     init {
-        templatePresentation.text = DefaultText
-        templatePresentation.description = DefaultDescription
+        val initialState = TargetPlatformConfigurationSelectorState.Unavailable
+        templatePresentation.putClientProperty(SelectorStateKey, initialState)
+        templatePresentation.text = initialState.text
+        templatePresentation.description = initialState.description
     }
 
     override fun update(event: AnActionEvent) {
@@ -34,23 +37,18 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
         event.presentation.isVisible = project != null
 
         if (project == null) {
-            event.presentation.isEnabled = false
-            event.presentation.text = DefaultText
-            event.presentation.description = DefaultDescription
+            applySelectorState(event.presentation, TargetPlatformConfigurationSelectorState.Unavailable)
             return
         }
 
         val service = project.service<TargetPlatformConfigurationService>()
-        val loadResult = service.load()
-        val selectedName = project.service<UnrealHelperSettings>().state.selectedTargetPlatformConfigurationName
-        val toolbarPresentation = targetPlatformConfigurationPresentation(
-            loadResult,
-            selectedName,
+        applySelectorState(
+            event.presentation,
+            targetPlatformConfigurationSelectorState(
+                loadResult = service.load(),
+                selectedName = project.service<UnrealHelperSettings>().state.selectedTargetPlatformConfigurationName,
+            ),
         )
-        event.presentation.text = toolbarPresentation.text
-        event.presentation.description = toolbarPresentation.description ?: DefaultDescription
-        event.presentation.isEnabled = targetPlatformConfigurationNeedsSetup(loadResult) ||
-            loadResult is TargetPlatformConfigurationLoadResult.Loaded
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
@@ -66,18 +64,18 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
 
             override fun presentationChanged(event: PropertyChangeEvent) {
                 super.presentationChanged(event)
-                if (event.propertyName == "text" || event.propertyName == "description") {
-                    updateSetupStyle()
-                }
+                updateSetupStyle()
             }
 
             override fun showPopup() {
                 val project = CommonDataKeys.PROJECT.getData(dataContext)
-                if (project != null &&
-                    targetPlatformConfigurationNeedsSetup(
-                        project.service<TargetPlatformConfigurationService>().load(),
+                val state = project?.let {
+                    targetPlatformConfigurationSelectorState(
+                        loadResult = it.service<TargetPlatformConfigurationService>().load(),
+                        selectedName = it.service<UnrealHelperSettings>().state.selectedTargetPlatformConfigurationName,
                     )
-                ) {
+                }
+                if (project != null && state?.opensManagement == true) {
                     showTargetPlatformConfigurationDialog(project)
                     return
                 }
@@ -86,10 +84,9 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
             }
 
             private fun updateSetupStyle() {
-                val usesSetupStyle = targetPlatformConfigurationUsesSetupStyle(
-                    presentation.text,
-                    presentation.description,
-                )
+                val usesSetupStyle = presentation.getClientProperty(SelectorStateKey)
+                    ?.usesSetupStyle
+                    ?: true
                 font = if (usesSetupStyle) {
                     regularFont.deriveFont(regularFont.style or Font.ITALIC)
                 } else {
@@ -132,10 +129,6 @@ class TargetPlatformConfigurationSelectorAction : ComboBoxAction(), DumbAware {
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
     }
 
-    private companion object {
-        const val DefaultText = ConfigureText
-        const val DefaultDescription = "Select Target & Platform configuration"
-    }
 }
 
 class TargetPlatformConfigurationManageAction : DumbAwareAction(
@@ -187,51 +180,66 @@ private fun showTargetPlatformConfigurationDialog(project: Project) {
     }
 }
 
-internal data class TargetPlatformConfigurationPresentation(
-    val text: String,
-    val description: String?,
-)
+internal sealed interface TargetPlatformConfigurationSelectorState {
+    val text: String
+    val description: String
+    val isEnabled: Boolean
+    val usesSetupStyle: Boolean
+    val opensManagement: Boolean
 
-internal fun targetPlatformConfigurationPresentation(selectedName: String): TargetPlatformConfigurationPresentation {
+    data object Setup : TargetPlatformConfigurationSelectorState {
+        override val text: String = ConfigureText
+        override val description: String = "Configure Target & Platform configurations"
+        override val isEnabled: Boolean = true
+        override val usesSetupStyle: Boolean = true
+        override val opensManagement: Boolean = true
+    }
+
+    data object Unselected : TargetPlatformConfigurationSelectorState {
+        override val text: String = ConfigureText
+        override val description: String = DefaultDescription
+        override val isEnabled: Boolean = true
+        override val usesSetupStyle: Boolean = true
+        override val opensManagement: Boolean = false
+    }
+
+    data class Selected(val name: String) : TargetPlatformConfigurationSelectorState {
+        override val text: String = name
+        override val description: String = "$SelectedDescriptionPrefix$name"
+        override val isEnabled: Boolean = true
+        override val usesSetupStyle: Boolean = false
+        override val opensManagement: Boolean = false
+    }
+
+    data object Unavailable : TargetPlatformConfigurationSelectorState {
+        override val text: String = ConfigureText
+        override val description: String = DefaultDescription
+        override val isEnabled: Boolean = false
+        override val usesSetupStyle: Boolean = true
+        override val opensManagement: Boolean = false
+    }
+}
+
+internal fun targetPlatformConfigurationSelectorState(
+    loadResult: TargetPlatformConfigurationLoadResult,
+    selectedName: String,
+): TargetPlatformConfigurationSelectorState {
+    if (targetPlatformConfigurationNeedsSetup(loadResult)) {
+        return TargetPlatformConfigurationSelectorState.Setup
+    }
+
+    if (loadResult !is TargetPlatformConfigurationLoadResult.Loaded) {
+        return TargetPlatformConfigurationSelectorState.Unavailable
+    }
     val trimmedName = selectedName.trim()
     if (trimmedName.isEmpty()) {
-        return TargetPlatformConfigurationPresentation(ConfigureText, null)
-    }
-
-    return TargetPlatformConfigurationPresentation(
-        text = trimmedName,
-        description = "$SelectedDescriptionPrefix$trimmedName",
-    )
-}
-
-internal fun targetPlatformConfigurationPresentation(
-    loadResult: TargetPlatformConfigurationLoadResult,
-    selectedName: String,
-): TargetPlatformConfigurationPresentation {
-    if (targetPlatformConfigurationNeedsSetup(loadResult)) {
-        return TargetPlatformConfigurationPresentation(
-            text = ConfigureText,
-            description = "Configure Target & Platform configurations",
-        )
-    }
-
-    return targetPlatformConfigurationPresentation(
-        targetPlatformConfigurationNameForPresentation(loadResult, selectedName),
-    )
-}
-
-internal fun targetPlatformConfigurationNameForPresentation(
-    loadResult: TargetPlatformConfigurationLoadResult,
-    selectedName: String,
-): String {
-    val trimmedName = selectedName.trim()
-    if (loadResult !is TargetPlatformConfigurationLoadResult.Loaded || trimmedName.isEmpty()) {
-        return ""
+        return TargetPlatformConfigurationSelectorState.Unselected
     }
 
     return trimmedName.takeIf { name ->
         loadResult.file.configurations.any { it.name == name }
-    }.orEmpty()
+    }?.let { TargetPlatformConfigurationSelectorState.Selected(it) }
+        ?: TargetPlatformConfigurationSelectorState.Unselected
 }
 
 internal fun targetPlatformConfigurationNeedsSetup(
@@ -240,12 +248,6 @@ internal fun targetPlatformConfigurationNeedsSetup(
     loadResult is TargetPlatformConfigurationLoadResult.Missing ||
         loadResult is TargetPlatformConfigurationLoadResult.Loaded &&
         loadResult.file.configurations.isEmpty()
-
-internal fun targetPlatformConfigurationUsesSetupStyle(
-    text: String?,
-    description: String?,
-): Boolean =
-    text == ConfigureText && !description.orEmpty().startsWith(SelectedDescriptionPrefix)
 
 internal fun targetPlatformConfigurationManagementError(
     loadResult: TargetPlatformConfigurationLoadResult,
@@ -259,4 +261,18 @@ internal fun targetPlatformConfigurationManagementError(
     }
 
 private const val ConfigureText = "Configure ..."
+private const val DefaultDescription = "Select Target & Platform configuration"
 private const val SelectedDescriptionPrefix = "Selected Target & Platform configuration: "
+private val SelectorStateKey = Key.create<TargetPlatformConfigurationSelectorState>(
+    "UnrealHelper.targetPlatformConfigurationSelectorState",
+)
+
+private fun applySelectorState(
+    presentation: Presentation,
+    state: TargetPlatformConfigurationSelectorState,
+) {
+    presentation.putClientProperty(SelectorStateKey, state)
+    presentation.text = state.text
+    presentation.description = state.description
+    presentation.isEnabled = state.isEnabled
+}
