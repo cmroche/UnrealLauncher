@@ -43,7 +43,6 @@ class TargetPlatformConfigurationToolbarActionsTest {
                 file = TargetPlatformConfigurationsFile(
                     configurations = listOf(TargetPlatformConfiguration("Client and Server")),
                 ),
-                modifiedMillis = 1L,
             ),
             selectedName = "Removed",
         )
@@ -98,7 +97,6 @@ class TargetPlatformConfigurationToolbarActionsTest {
                 TargetPlatformConfigurationLoadResult.Loaded(
                     path = Path.of(".unrealhelper", "target-platforms.json"),
                     file = TargetPlatformConfigurationsFile(),
-                    modifiedMillis = 1L,
                 ),
             ),
         )
@@ -113,7 +111,6 @@ class TargetPlatformConfigurationToolbarActionsTest {
                     file = TargetPlatformConfigurationsFile(
                         configurations = listOf(TargetPlatformConfiguration("Client and Server")),
                     ),
-                    modifiedMillis = 1L,
                 ),
             ),
         )

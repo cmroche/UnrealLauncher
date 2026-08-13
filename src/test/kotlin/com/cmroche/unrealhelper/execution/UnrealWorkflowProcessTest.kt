@@ -68,7 +68,6 @@ class UnrealWorkflowProcessTest {
 
     private fun shellCommand(script: String): UnrealCommand =
         UnrealCommand(
-            title = "test command",
             executable = "/bin/sh",
             arguments = listOf("-c", script),
             workingDirectory = System.getProperty("java.io.tmpdir"),

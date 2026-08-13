@@ -31,7 +31,6 @@ object UnrealCommandBuilder {
         }
         val targets = projectTargets + packagingTargets
         return UnrealCommand(
-            title = "Unreal Build ${targets.size} target(s)",
             executable = unrealBuildTool(first.engineRoot, osName),
             arguments = targets + "-WaitMutex",
             workingDirectory = first.workspaceRoot.toString(),
@@ -45,7 +44,6 @@ object UnrealCommandBuilder {
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand =
         uatCommand(
-            title = "Unreal Cook ${context.targetName} ${context.targetType} ${context.platform}",
             context = context,
             osName = osName,
             phaseArguments = buildList {
@@ -62,7 +60,6 @@ object UnrealCommandBuilder {
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand =
         uatCommand(
-            title = "Unreal Stage ${context.targetName} ${context.targetType} ${context.platform}",
             context = context,
             osName = osName,
             phaseArguments = listOf(
@@ -79,7 +76,6 @@ object UnrealCommandBuilder {
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand =
         uatCommand(
-            title = "Unreal Package ${context.targetName} ${context.targetType} ${context.platform}",
             context = context,
             osName = osName,
             phaseArguments = listOf(
@@ -96,7 +92,6 @@ object UnrealCommandBuilder {
         )
 
     private fun uatCommand(
-        title: String,
         context: UnrealCommandContext,
         osName: String,
         phaseArguments: List<String>,
@@ -105,7 +100,6 @@ object UnrealCommandBuilder {
             "Editor target '${context.targetName}' cannot be cooked, staged, or packaged"
         }
         return UnrealCommand(
-            title = title,
             executable = runUat(context.engineRoot, osName),
             arguments = listOf(
                 "BuildCookRun",

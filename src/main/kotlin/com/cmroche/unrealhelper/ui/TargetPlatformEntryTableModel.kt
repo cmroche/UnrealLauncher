@@ -7,9 +7,6 @@ class TargetPlatformEntryTableModel : AbstractTableModel() {
     private val columns = listOf("Build Target", "Platform", "Arguments", "Cook", "Incremental Cook")
     private var mutableRows = mutableListOf<TargetPlatformEntry>()
 
-    val rows: List<TargetPlatformEntry>
-        get() = mutableRows
-
     override fun getRowCount(): Int = mutableRows.size
 
     override fun getColumnCount(): Int = columns.size

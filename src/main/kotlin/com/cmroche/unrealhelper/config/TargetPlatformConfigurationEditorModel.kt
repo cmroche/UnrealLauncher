@@ -77,17 +77,6 @@ class TargetPlatformConfigurationEditorModel(
         return true
     }
 
-    fun addEntry(entry: TargetPlatformEntry): Boolean {
-        val index = selectedIndex()
-        if (index == -1) {
-            return false
-        }
-
-        val selected = configurations[index]
-        configurations[index] = selected.copy(entries = selected.entries + entry.normalized())
-        return true
-    }
-
     fun setEntries(entries: List<TargetPlatformEntry>): Boolean {
         val index = selectedIndex()
         if (index == -1) {

@@ -79,15 +79,7 @@ class UnrealPlannedActionExecutorTest {
         executor.create(Stage(server), environment())
         executor.create(Package(client), environment())
 
-        assertEquals(
-            listOf(
-                "Unreal Build 2 target(s)",
-                "Unreal Cook LyraClient Client Win64",
-                "Unreal Stage LyraServer Server Win64",
-                "Unreal Package LyraClient Client Win64",
-            ),
-            processes.commands.map { it.title },
-        )
+        assertEquals(4, processes.commands.size)
         assertEquals("-cookincremental", processes.commands[1].arguments.first { it == "-cookincremental" })
         assertEquals(
             "-archivedirectory=/Artifacts/Lyra/${artifactDirectoryName(client)}",
