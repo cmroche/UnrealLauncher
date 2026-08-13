@@ -9,6 +9,7 @@ import com.cmroche.unrealhelper.execution.UnrealWorkflowExecutionService
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.ui.UnrealWorkflowConflictDialog
+import com.cmroche.unrealhelper.workflow.ResolvedUnrealWorkflowInputs
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPlanner
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPreflightResult
@@ -61,12 +62,7 @@ internal abstract class UnrealWorkflowAction(
 
 internal class UnrealWorkflowSubmitter(
     private val execution: UnrealWorkflowExecution,
-    private val planner: (
-        UnrealWorkflowRequest,
-        TargetPlatformConfiguration,
-        UnrealHelperSettingsState,
-        String?,
-    ) -> UnrealExecutionPlan = UnrealWorkflowPlanner()::plan,
+    private val planner: (ResolvedUnrealWorkflowInputs) -> UnrealExecutionPlan = UnrealWorkflowPlanner()::plan,
     private val preflight: (
         UnrealWorkflowRequest,
         TargetPlatformConfiguration,

@@ -112,16 +112,17 @@ class UnrealBuildCookPackageActionsTest {
     fun `submitter validates and submits the same plan exactly once when state changes`() {
         val execution = RecordingExecution()
         val state = filesystemState()
+        val originalEngineRoot = Path.of(state.engineRoot)
         var plannerCalls = 0
         lateinit var capturedPlan: UnrealExecutionPlan
 
         val error = UnrealWorkflowSubmitter(
             execution = execution,
-            planner = { request, configuration, currentState, basePath ->
+            planner = { inputs ->
                 plannerCalls += 1
-                UnrealWorkflowPlanner().plan(request, configuration, currentState, basePath).also {
+                state.engineRoot = state.workspaceRoot + "/changed-after-resolution"
+                UnrealWorkflowPlanner().plan(inputs).also {
                     capturedPlan = it
-                    currentState.engineRoot = currentState.workspaceRoot + "/changed-after-planning"
                 }
             },
         ).submit(
@@ -133,6 +134,7 @@ class UnrealBuildCookPackageActionsTest {
 
         assertNull(error)
         assertEquals(1, plannerCalls)
+        assertEquals(originalEngineRoot, capturedPlan.environment.engineRoot)
         assertSame(capturedPlan, execution.started.single())
     }
 
