@@ -1,15 +1,19 @@
 package com.cmroche.unrealhelper.execution
 
 import com.cmroche.unrealhelper.command.UnrealCommand
+import com.intellij.execution.configurations.GeneralCommandLine
+import com.intellij.execution.configurations.GeneralCommandLine.ParentEnvironmentType
+import com.intellij.execution.configurations.ParametersList
 import com.intellij.execution.process.ProcessOutputType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import javax.swing.SwingUtilities
+import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import javax.swing.SwingUtilities
 
 class UnrealWorkflowProcessTest {
     @Test
@@ -64,6 +68,23 @@ class UnrealWorkflowProcessTest {
         assertFalse("caller thread did not finish", caller.isAlive)
         assertTrue("EDT task did not run", completed.await(10, TimeUnit.SECONDS))
         assertTrue("task did not run on EDT", ranOnEdt)
+    }
+
+    @Test
+    fun `debug configuration preserves the resolved launch command`() {
+        val commandLine = GeneralCommandLine("/Workspace/Lyra/Binaries/Mac/LyraClient")
+            .withWorkingDirectory(Path.of("/Workspace/Lyra/Binaries/Mac"))
+            .withEnvironment(mapOf("UE_LOG" to "verbose"))
+        commandLine.withParentEnvironmentType(ParentEnvironmentType.NONE)
+        commandLine.addParameters("-windowed", "-ExecCmds=stat fps")
+
+        val parameters = debugConfigurationParameters(commandLine)
+
+        assertEquals(commandLine.exePath, parameters.exePath)
+        assertEquals(commandLine.workingDirectory.toString(), parameters.workingDirectory)
+        assertEquals(commandLine.parametersList.list, ParametersList.parse(parameters.programParameters).toList())
+        assertEquals(mapOf("UE_LOG" to "verbose"), parameters.envs)
+        assertFalse(parameters.isPassParentEnvs)
     }
 
     private fun shellCommand(script: String): UnrealCommand =

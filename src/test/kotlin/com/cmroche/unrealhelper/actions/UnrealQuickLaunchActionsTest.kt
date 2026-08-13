@@ -7,6 +7,8 @@ import com.cmroche.unrealhelper.launch.QuickLaunchKey
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import com.cmroche.unrealhelper.settings.UnrealTargetState
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowRequest
+import com.cmroche.unrealhelper.workflow.UnrealLaunchMode
+import com.cmroche.unrealhelper.workflow.Launch
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPlanner
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPreflightResult
 import org.junit.Assert.assertEquals
@@ -46,6 +48,23 @@ class UnrealQuickLaunchActionsTest {
         assertNull(error)
         assertEquals(1, execution.started.size)
         assertEquals("LyraClient", execution.started.single().phases.last().actions.single().artifacts.single().targetName)
+    }
+
+    @Test
+    fun `debug submits every selected target for debugger launch`() {
+        val execution = RecordingExecution()
+
+        val error = submitter(execution).submit(
+            request = UnrealWorkflowRequest.DEBUG,
+            configuration = configuration(),
+            state = state(),
+            projectBasePath = "/Workspace/Lyra",
+        )
+
+        assertNull(error)
+        val plan = execution.started.single()
+        assertEquals(UnrealWorkflowRequest.DEBUG, plan.request)
+        assertEquals(UnrealLaunchMode.DEBUG, (plan.phases.last().actions.single() as Launch).mode)
     }
 
     @Test

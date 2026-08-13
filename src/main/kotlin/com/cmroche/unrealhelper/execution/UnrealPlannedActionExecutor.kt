@@ -13,6 +13,7 @@ import com.cmroche.unrealhelper.workflow.Package
 import com.cmroche.unrealhelper.workflow.Stage
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
+import com.cmroche.unrealhelper.workflow.UnrealLaunchMode
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.cmroche.unrealhelper.workflow.artifactDirectoryName
 import com.cmroche.unrealhelper.workflow.launchTitle
@@ -23,7 +24,11 @@ import java.nio.file.Path
 internal interface UnrealPlannedActionProcessFactory {
     fun create(command: UnrealCommand): UnrealWorkflowProcess
 
-    fun createLaunch(commandLine: GeneralCommandLine, title: String): UnrealWorkflowProcess
+    fun createLaunch(
+        commandLine: GeneralCommandLine,
+        title: String,
+        mode: UnrealLaunchMode,
+    ): UnrealWorkflowProcess
 }
 
 internal class RiderUnrealPlannedActionExecutor(
@@ -70,6 +75,7 @@ internal class RiderUnrealPlannedActionExecutor(
         return processFactory.createLaunch(
             UnrealLaunchCommandBuilder.build(action, artifact),
             action.launchTitle(),
+            action.mode,
         )
     }
 
@@ -92,6 +98,12 @@ private class RiderUnrealPlannedActionProcessFactory(
     override fun create(command: UnrealCommand): UnrealWorkflowProcess =
         UnrealWorkflowProcessFactory.create(command)
 
-    override fun createLaunch(commandLine: GeneralCommandLine, title: String): UnrealWorkflowProcess =
-        UnrealWorkflowProcessFactory.createLaunch(project, commandLine, title)
+    override fun createLaunch(
+        commandLine: GeneralCommandLine,
+        title: String,
+        mode: UnrealLaunchMode,
+    ): UnrealWorkflowProcess = when (mode) {
+        UnrealLaunchMode.RUN -> UnrealWorkflowProcessFactory.createLaunch(project, commandLine, title)
+        UnrealLaunchMode.DEBUG -> UnrealWorkflowProcessFactory.createDebugLaunch(project, commandLine, title)
+    }
 }

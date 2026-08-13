@@ -36,6 +36,10 @@ class UnrealWorkflowPlannerTest {
             listOf(UnrealPhase.BUILD, UnrealPhase.COOK, UnrealPhase.LAUNCH),
             planner.plan(UnrealWorkflowRequest.LAUNCH, configuration, state, null).phases.map { it.phase },
         )
+        assertEquals(
+            listOf(UnrealPhase.BUILD, UnrealPhase.COOK, UnrealPhase.LAUNCH),
+            planner.plan(UnrealWorkflowRequest.DEBUG, configuration, state, null).phases.map { it.phase },
+        )
     }
 
     @Test
@@ -212,6 +216,25 @@ class UnrealWorkflowPlannerTest {
                 Triple(1, "-second", "-global -trace=cpu"),
             ),
             plan.actions<Launch>().map { Triple(it.rowIndex, it.entryArguments, it.globalArguments) },
+        )
+    }
+
+    @Test
+    fun `debug plans every launch row for debugger execution`() {
+        val plan = planner.plan(
+            UnrealWorkflowRequest.DEBUG,
+            configuration(
+                entry("LyraClient", "Win64", arguments = "-first"),
+                entry("LyraClient", "Win64", arguments = "-second"),
+            ),
+            state(target("LyraClient", "Client")),
+            null,
+        )
+
+        assertEquals(UnrealWorkflowRequest.DEBUG, plan.request)
+        assertEquals(
+            listOf(UnrealLaunchMode.DEBUG, UnrealLaunchMode.DEBUG),
+            plan.actions<Launch>().map(Launch::mode),
         )
     }
 

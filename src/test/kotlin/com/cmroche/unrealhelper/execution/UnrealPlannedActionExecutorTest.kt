@@ -14,6 +14,7 @@ import com.cmroche.unrealhelper.workflow.Stage
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
 import com.cmroche.unrealhelper.workflow.UnrealExecutionEnvironment
+import com.cmroche.unrealhelper.workflow.UnrealLaunchMode
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
 import com.cmroche.unrealhelper.workflow.UnrealWorkflowPlanner
@@ -121,6 +122,41 @@ class UnrealPlannedActionExecutorTest {
         assertEquals(executable.toString(), processes.launchCommands.single().exePath)
         assertEquals(listOf("-windowed", "-log"), processes.launchCommands.single().parametersList.list)
         assertEquals("Unreal Three Clients 1: LyraClient Client Win64", processes.launchTitles.single())
+        assertEquals(UnrealLaunchMode.RUN, processes.launchModes.single())
+    }
+
+    @Test
+    fun `debug launch selects debugger process mode without changing its command`() {
+        val processes = RecordingProcessFactory()
+        val executable = Path.of("/Workspace/Lyra/Binaries/Win64/LyraClient.exe")
+        val executor = RiderUnrealPlannedActionExecutor(
+            processFactory = processes,
+            receiptResolver = { key, _, engineRoot ->
+                ResolvedLaunchArtifact(
+                    receiptPath = executable.resolveSibling("LyraClient.target"),
+                    executable = executable,
+                    projectPath = key.projectPath,
+                    workingDirectory = executable.parent,
+                    engineRoot = engineRoot,
+                )
+            },
+        )
+
+        executor.create(
+            Launch(
+                artifact = artifact("LyraClient", "Client"),
+                configurationName = "Client",
+                rowIndex = 0,
+                entryArguments = "-windowed",
+                globalArguments = "-log",
+                mode = UnrealLaunchMode.DEBUG,
+            ),
+            environment(),
+        )
+
+        assertEquals(UnrealLaunchMode.DEBUG, processes.launchModes.single())
+        assertEquals(executable.toString(), processes.launchCommands.single().exePath)
+        assertEquals(listOf("-windowed", "-log"), processes.launchCommands.single().parametersList.list)
     }
 
     private fun settings() = UnrealHelperSettings().also {
@@ -147,6 +183,7 @@ class UnrealPlannedActionExecutorTest {
         val commands = mutableListOf<UnrealCommand>()
         val launchCommands = mutableListOf<GeneralCommandLine>()
         val launchTitles = mutableListOf<String>()
+        val launchModes = mutableListOf<UnrealLaunchMode>()
         val workflowProcesses = mutableListOf<CompletableFakeProcess>()
 
         override fun create(command: UnrealCommand): UnrealWorkflowProcess {
@@ -154,9 +191,14 @@ class UnrealPlannedActionExecutorTest {
             return CompletableFakeProcess().also(workflowProcesses::add)
         }
 
-        override fun createLaunch(commandLine: GeneralCommandLine, title: String): UnrealWorkflowProcess {
+        override fun createLaunch(
+            commandLine: GeneralCommandLine,
+            title: String,
+            mode: UnrealLaunchMode,
+        ): UnrealWorkflowProcess {
             launchCommands += commandLine
             launchTitles += title
+            launchModes += mode
             return CompletableFakeProcess()
         }
     }

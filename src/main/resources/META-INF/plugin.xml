@@ -71,6 +71,12 @@
           description="Build and launch selected Unreal targets"
           icon="com.intellij.icons.AllIcons.Actions.Execute"/>
       <action
+          id="UnrealHelper.DebugAction"
+          class="com.cmroche.unrealhelper.actions.UnrealDebugAction"
+          text="Debug"
+          description="Build and debug selected Unreal targets"
+          icon="com.intellij.icons.AllIcons.Actions.StartDebugger"/>
+      <action
           id="UnrealHelper.StopLaunchAction"
           class="com.cmroche.unrealhelper.actions.UnrealStopLaunchAction"
           text="Stop"

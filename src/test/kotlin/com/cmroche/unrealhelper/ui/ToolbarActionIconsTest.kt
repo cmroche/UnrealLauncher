@@ -20,7 +20,13 @@ class ToolbarActionIconsTest {
         assertEquals("/icons/cook.svg", actionIcon(document, "UnrealHelper.CookAction"))
         assertEquals("/icons/package.svg", actionIcon(document, "UnrealHelper.PackageAction"))
         assertEquals("com.intellij.icons.AllIcons.Actions.Execute", actionIcon(document, "UnrealHelper.LaunchAction"))
+        assertEquals(
+            "com.intellij.icons.AllIcons.Actions.StartDebugger",
+            actionIcon(document, "UnrealHelper.DebugAction"),
+        )
         assertEquals("com.intellij.icons.AllIcons.Actions.Suspend", actionIcon(document, "UnrealHelper.StopLaunchAction"))
+        assertTrue(actionIndex(document, "UnrealHelper.LaunchAction") < actionIndex(document, "UnrealHelper.DebugAction"))
+        assertTrue(actionIndex(document, "UnrealHelper.DebugAction") < actionIndex(document, "UnrealHelper.StopLaunchAction"))
     }
 
     @Test
@@ -97,5 +103,12 @@ class ToolbarActionIconsTest {
         }
 
         return null
+    }
+
+    private fun actionIndex(document: org.w3c.dom.Document, id: String): Int {
+        val actions = document.getElementsByTagName("action")
+        return (0 until actions.length).first { index ->
+            (actions.item(index) as org.w3c.dom.Element).getAttribute("id") == id
+        }
     }
 }
