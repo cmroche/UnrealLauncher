@@ -17,37 +17,38 @@ class TargetPlatformConfigurationToolbarActionsTest {
     }
 
     @Test
-    fun `unselected toolbar presentation uses default label`() {
-        val presentation = targetPlatformConfigurationPresentation("")
+    fun `unselected selector state uses default label`() {
+        val state = targetPlatformConfigurationSelectorState(loaded("Client and Server"), "")
 
-        assertEquals("Configure ...", presentation.text)
-        assertNull(presentation.description)
+        assertEquals(TargetPlatformConfigurationSelectorState.Unselected, state)
+        assertEquals("Configure ...", state.text)
+        assertEquals("Select Target & Platform configuration", state.description)
+        assertTrue(state.isEnabled)
+        assertTrue(state.usesSetupStyle)
     }
 
     @Test
-    fun `selected toolbar presentation uses configuration name`() {
-        val presentation = targetPlatformConfigurationPresentation("Client and Server")
+    fun `selected selector state uses configuration name`() {
+        val state = targetPlatformConfigurationSelectorState(loaded("Client and Server"), "Client and Server")
 
-        assertEquals("Client and Server", presentation.text)
+        assertEquals(TargetPlatformConfigurationSelectorState.Selected("Client and Server"), state)
+        assertEquals("Client and Server", state.text)
         assertEquals(
             "Selected Target & Platform configuration: Client and Server",
-            presentation.description,
+            state.description,
         )
+        assertTrue(state.isEnabled)
+        assertFalse(state.usesSetupStyle)
     }
 
     @Test
     fun `stale selected name is hidden from loaded presentation`() {
-        val selectedName = targetPlatformConfigurationNameForPresentation(
-            loadResult = TargetPlatformConfigurationLoadResult.Loaded(
-                path = Path.of(".unrealhelper", "target-platforms.json"),
-                file = TargetPlatformConfigurationsFile(
-                    configurations = listOf(TargetPlatformConfiguration("Client and Server")),
-                ),
-            ),
+        val state = targetPlatformConfigurationSelectorState(
+            loadResult = loaded("Client and Server"),
             selectedName = "Removed",
         )
 
-        assertEquals("", selectedName)
+        assertEquals(TargetPlatformConfigurationSelectorState.Unselected, state)
     }
 
     @Test
@@ -57,75 +58,57 @@ class TargetPlatformConfigurationToolbarActionsTest {
         )
 
         assertTrue(targetPlatformConfigurationNeedsSetup(loadResult))
-        assertEquals(
-            TargetPlatformConfigurationPresentation(
-                text = "Configure ...",
-                description = "Configure Target & Platform configurations",
-            ),
-            targetPlatformConfigurationPresentation(loadResult, selectedName = ""),
-        )
-        assertTrue(
-            targetPlatformConfigurationUsesSetupStyle(
-                text = "Configure ...",
-                description = "Configure Target & Platform configurations",
-            ),
-        )
-        assertFalse(
-            targetPlatformConfigurationUsesSetupStyle(
-                text = "Client",
-                description = "Selected Target & Platform configuration: Client",
-            ),
-        )
+        val state = targetPlatformConfigurationSelectorState(loadResult, selectedName = "")
+        assertEquals(TargetPlatformConfigurationSelectorState.Setup, state)
+        assertTrue(state.isEnabled)
+        assertTrue(state.usesSetupStyle)
+        assertTrue(state.opensManagement)
     }
 
     @Test
     fun `configuration named like the default label does not use setup style`() {
-        val presentation = targetPlatformConfigurationPresentation("Configure ...")
+        val state = targetPlatformConfigurationSelectorState(loaded("Configure ..."), "Configure ...")
 
-        assertFalse(
-            targetPlatformConfigurationUsesSetupStyle(
-                presentation.text,
-                presentation.description,
-            ),
-        )
+        assertEquals(TargetPlatformConfigurationSelectorState.Selected("Configure ..."), state)
+        assertFalse(state.usesSetupStyle)
     }
 
     @Test
     fun `empty configuration file requires setup`() {
-        assertTrue(
-            targetPlatformConfigurationNeedsSetup(
-                TargetPlatformConfigurationLoadResult.Loaded(
-                    path = Path.of(".unrealhelper", "target-platforms.json"),
-                    file = TargetPlatformConfigurationsFile(),
-                ),
+        val state = targetPlatformConfigurationSelectorState(
+            TargetPlatformConfigurationLoadResult.Loaded(
+                path = Path.of(".unrealhelper", "target-platforms.json"),
+                file = TargetPlatformConfigurationsFile(),
             ),
+            selectedName = "",
         )
+
+        assertEquals(TargetPlatformConfigurationSelectorState.Setup, state)
     }
 
     @Test
     fun `configuration file with an entry uses selector`() {
-        assertFalse(
-            targetPlatformConfigurationNeedsSetup(
-                TargetPlatformConfigurationLoadResult.Loaded(
-                    path = Path.of(".unrealhelper", "target-platforms.json"),
-                    file = TargetPlatformConfigurationsFile(
-                        configurations = listOf(TargetPlatformConfiguration("Client and Server")),
-                    ),
-                ),
-            ),
+        val state = targetPlatformConfigurationSelectorState(
+            loaded("Client and Server"),
+            selectedName = "Client and Server",
         )
+
+        assertEquals(TargetPlatformConfigurationSelectorState.Selected("Client and Server"), state)
     }
 
     @Test
     fun `malformed configuration does not enter setup state`() {
-        assertFalse(
-            targetPlatformConfigurationNeedsSetup(
-                TargetPlatformConfigurationLoadResult.Malformed(
-                    path = Path.of(".unrealhelper", "target-platforms.json"),
-                    message = "Unexpected JSON",
-                ),
-            ),
+        val loadResult = TargetPlatformConfigurationLoadResult.Malformed(
+            path = Path.of(".unrealhelper", "target-platforms.json"),
+            message = "Unexpected JSON",
         )
+
+        assertFalse(targetPlatformConfigurationNeedsSetup(loadResult))
+        val state = targetPlatformConfigurationSelectorState(loadResult, selectedName = "Client")
+        assertEquals(TargetPlatformConfigurationSelectorState.Unavailable, state)
+        assertFalse(state.isEnabled)
+        assertTrue(state.usesSetupStyle)
+        assertFalse(state.opensManagement)
     }
 
     @Test
@@ -151,4 +134,12 @@ class TargetPlatformConfigurationToolbarActionsTest {
             ),
         )
     }
+
+    private fun loaded(vararg names: String): TargetPlatformConfigurationLoadResult.Loaded =
+        TargetPlatformConfigurationLoadResult.Loaded(
+            path = Path.of(".unrealhelper", "target-platforms.json"),
+            file = TargetPlatformConfigurationsFile(
+                configurations = names.map(::TargetPlatformConfiguration),
+            ),
+        )
 }
