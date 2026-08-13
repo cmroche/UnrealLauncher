@@ -1,14 +1,9 @@
 package com.cmroche.unrealhelper.execution
 
-import com.cmroche.unrealhelper.workflow.BuildBatch
-import com.cmroche.unrealhelper.workflow.Cook
-import com.cmroche.unrealhelper.workflow.Launch
-import com.cmroche.unrealhelper.workflow.Package
-import com.cmroche.unrealhelper.workflow.Stage
-import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealExecutionPlan
 import com.cmroche.unrealhelper.workflow.UnrealPhase
 import com.cmroche.unrealhelper.workflow.UnrealPlannedAction
+import com.cmroche.unrealhelper.workflow.displayName
 import com.intellij.build.BuildDescriptor
 import com.intellij.build.BuildViewManager
 import com.intellij.build.DefaultBuildDescriptor
@@ -152,12 +147,12 @@ internal class UnrealBuildTreeEventAdapter(
         }
         val actionId = UUID.randomUUID()
         actionIds[action] = actionId
-        emitNode(actionId, phaseId, "Waiting: ${actionTitle(action)}")
+        emitNode(actionId, phaseId, "Waiting: ${action.displayName()}")
     }
 
     fun started(action: UnrealPlannedAction) {
         states.start(action)
-        emitNode(actionId(action), phaseId(action.phase), "Running: ${actionTitle(action)}")
+        emitNode(actionId(action), phaseId(action.phase), "Running: ${action.displayName()}")
         emitNode(phaseId(action.phase), buildId, "Running: ${phaseTitle(action.phase)}")
     }
 
@@ -172,7 +167,7 @@ internal class UnrealBuildTreeEventAdapter(
                 actionId(action),
                 phaseId(action.phase),
                 now(),
-                "${status(result)}: ${actionTitle(action)}",
+                "${status(result)}: ${action.displayName()}",
                 null,
                 null,
                 actionResult(result),
@@ -260,31 +255,6 @@ private fun workflowTitle(plan: UnrealExecutionPlan): String =
 
 private fun phaseTitle(phase: UnrealPhase): String = phase.presentableName()
 
-private fun actionTitle(action: UnrealPlannedAction): String =
-    when (action) {
-        is BuildBatch -> "Build ${action.artifacts.joinToString(separator = "; ") { it.descriptor() }}"
-        is Cook -> "Cook ${action.artifact.descriptor()} (${action.mode.name.lowercase()})"
-        is Stage -> "Stage ${action.artifact.descriptor()}"
-        is Package -> "Package ${action.artifact.descriptor()}"
-        is Launch -> "Launch ${action.artifact.descriptor()} (${action.configurationName})"
-    }
-
-private fun UnrealArtifactKey.descriptor(): String =
-    buildString {
-        append(targetName)
-        append(" [")
-        append(targetType)
-        append(", ")
-        append(platform)
-        append(", ")
-        append(buildConfiguration)
-        architecture?.let {
-            append(", ")
-            append(it)
-        }
-        append(']')
-    }
-
 private fun Enum<*>.presentableName(): String =
     name.lowercase().replaceFirstChar { it.titlecase() }
 
@@ -299,11 +269,11 @@ private fun planResult(result: UnrealPlanResult): EventResult =
     when (result) {
         UnrealPlanResult.Success -> SuccessResultImpl()
         is UnrealPlanResult.Failure -> FailureResultImpl(buildString {
-            append(actionTitle(result.action)).append(": ")
+            append(result.action.displayName()).append(": ")
             append(failureMessage(result.exitCode, result.detail, result.command))
             if (result.cancelledActions.isNotEmpty()) {
                 append(". Cancelled: ")
-                append(result.cancelledActions.joinToString { actionTitle(it) })
+                append(result.cancelledActions.joinToString { it.displayName() })
             }
         })
         UnrealPlanResult.Cancelled -> SkippedResultImpl()

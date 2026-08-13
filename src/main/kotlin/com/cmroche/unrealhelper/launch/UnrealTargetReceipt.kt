@@ -1,6 +1,7 @@
 package com.cmroche.unrealhelper.launch
 
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
+import com.cmroche.unrealhelper.workflow.descriptor
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -125,11 +126,4 @@ internal object UnrealTargetReceiptResolver {
 
     private fun receiptNotFoundMessage(key: UnrealArtifactKey, searchRoots: List<Path>): String =
         "Could not find target receipt for ${key.descriptor()}. Searched: ${searchRoots.joinToString()}"
-
-    private fun UnrealArtifactKey.descriptor(): String = buildString {
-        append(targetName).append(" [").append(targetType).append(", ").append(platform)
-            .append(", ").append(buildConfiguration)
-        architecture?.let { append(", ").append(it) }
-        append(']')
-    }
 }
