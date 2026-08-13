@@ -23,110 +23,65 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 class UnrealHelperConfigurable(private val project: Project) : SearchableConfigurable {
-    private var rootPanel: JPanel? = null
-    private var uprojectPathField: JBTextField? = null
-    private var workspaceRootField: JBTextField? = null
-    private var packageDirectoryField: JBTextField? = null
-    private var engineRootField: JBTextField? = null
-    private var buildConfigurationComboBox: ComboBox<String>? = null
-    private var discoverySummaryArea: JBTextArea? = null
-    private var commandLineArea: JBTextArea? = null
-    private var applyToRunDebug: JCheckBox? = null
+    private var form: SettingsForm? = null
 
     override fun getId(): String = "com.cmroche.unrealhelper.settings"
 
     override fun getDisplayName(): String = "UnrealHelper"
 
     override fun createComponent(): JComponent {
+        val form = SettingsForm()
+        this.form = form
         val content = JPanel()
         content.layout = BoxLayout(content, BoxLayout.Y_AXIS)
 
-        uprojectPathField = JBTextField()
-        workspaceRootField = JBTextField()
-        packageDirectoryField = JBTextField()
-        engineRootField = JBTextField()
-        buildConfigurationComboBox = ComboBox<String>(UnrealHelperSettings.BuildConfigurations.toTypedArray())
-        discoverySummaryArea = JBTextArea(6, 72).also {
-            it.isEditable = false
-        }
-        commandLineArea = JBTextArea(10, 72)
-        applyToRunDebug = JCheckBox("Apply global arguments to Rider Run/Debug launches")
-
-        content.add(projectPanel())
-        content.add(discoveryPanel())
-        content.add(globalArgsPanel())
+        content.add(projectPanel(form))
+        content.add(discoveryPanel(form))
+        content.add(globalArgsPanel(form))
 
         val panel = JPanel(BorderLayout())
         panel.add(JBScrollPane(content), BorderLayout.CENTER)
-        rootPanel = panel
         reset()
 
         return panel
     }
 
     override fun isModified(): Boolean {
+        val form = form ?: return false
         val settings = project.service<UnrealHelperSettings>()
-        val state = settings.state
-        return uprojectPathField?.text != state.uprojectPath ||
-            workspaceRootField?.text != state.workspaceRoot ||
-            packageDirectoryField?.text != settings.effectivePackageDirectory() ||
-            engineRootField?.text != state.engineRoot ||
-            selectedBuildConfiguration() != settings.effectiveBuildConfiguration() ||
-            commandLineArea?.text != CommandLineArguments.toEditorText(state.activeCommandLine) ||
-            applyToRunDebug?.isSelected != state.applyToRunDebug
+        return form.values() != settingsFormValues(settings)
     }
 
     override fun apply() {
+        val form = form ?: return
         val settings = project.service<UnrealHelperSettings>()
-        val state = settings.state
-
-        state.uprojectPath = uprojectPathField?.text.orEmpty().trim()
-        state.workspaceRoot = workspaceRootField?.text.orEmpty().trim()
-        state.packageDirectory = packageDirectoryField?.text.orEmpty().trim()
-        state.engineRoot = engineRootField?.text.orEmpty().trim()
-        state.buildConfiguration = selectedBuildConfiguration()
-        state.applyToRunDebug = applyToRunDebug?.isSelected ?: true
-        settings.setActiveCommandLine(CommandLineArguments.fromEditorText(commandLineArea?.text.orEmpty()))
+        applySettingsFormValues(settings, form.values())
     }
 
     override fun reset() {
+        val form = form ?: return
         val settings = project.service<UnrealHelperSettings>()
-        val state = settings.state
-        uprojectPathField?.text = state.uprojectPath
-        workspaceRootField?.text = state.workspaceRoot
-        packageDirectoryField?.text = settings.effectivePackageDirectory()
-        engineRootField?.text = state.engineRoot
-        buildConfigurationComboBox?.selectedItem = settings.effectiveBuildConfiguration()
-        discoverySummaryArea?.text = discoverySummary(state)
-        commandLineArea?.text = CommandLineArguments.toEditorText(state.activeCommandLine)
-        applyToRunDebug?.isSelected = state.applyToRunDebug
+        form.setValues(settingsFormValues(settings))
+        form.discoverySummary.text = discoverySummary(settings.state)
     }
 
     override fun disposeUIResources() {
-        rootPanel = null
-        uprojectPathField = null
-        workspaceRootField = null
-        packageDirectoryField = null
-        engineRootField = null
-        buildConfigurationComboBox = null
-        discoverySummaryArea = null
-        commandLineArea = null
-        applyToRunDebug = null
+        form = null
     }
 
-    private fun projectPanel(): JPanel {
+    private fun projectPanel(form: SettingsForm): JPanel {
         val panel = sectionPanel("Project")
-        val form = JPanel(GridBagLayout())
-        addFormRow(form, 0, ".uproject:", uprojectPathField)
-        addFormRow(form, 1, "Workspace Root:", workspaceRootField)
-        addFormRow(form, 2, "Engine Root:", engineRootField)
-        addFormRow(form, 3, "Package Dir:", packageDirectoryField)
-        addFormRow(form, 4, "Build Configuration:", buildConfigurationComboBox)
-        panel.add(form, BorderLayout.CENTER)
+        val fields = JPanel(GridBagLayout())
+        addFormRow(fields, 0, ".uproject:", form.uprojectPath)
+        addFormRow(fields, 1, "Workspace Root:", form.workspaceRoot)
+        addFormRow(fields, 2, "Engine Root:", form.engineRoot)
+        addFormRow(fields, 3, "Package Dir:", form.packageDirectory)
+        addFormRow(fields, 4, "Build Configuration:", form.buildConfiguration)
+        panel.add(fields, BorderLayout.CENTER)
         return panel
     }
 
-    private fun discoveryPanel(): JPanel {
+    private fun discoveryPanel(form: SettingsForm): JPanel {
         val panel = sectionPanel("Detection")
         val refreshButton = JButton("Refresh from Rider Model")
         refreshButton.addActionListener {
@@ -140,15 +95,15 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         val top = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0))
         top.add(refreshButton)
         panel.add(top, BorderLayout.NORTH)
-        panel.add(JBScrollPane(discoverySummaryArea), BorderLayout.CENTER)
+        panel.add(JBScrollPane(form.discoverySummary), BorderLayout.CENTER)
         return panel
     }
 
-    private fun globalArgsPanel(): JPanel {
+    private fun globalArgsPanel(form: SettingsForm): JPanel {
         val panel = sectionPanel("Global Run/Debug Args")
         panel.add(JBLabel("Global launch arguments, one option per line:"), BorderLayout.NORTH)
-        panel.add(JBScrollPane(commandLineArea), BorderLayout.CENTER)
-        panel.add(applyToRunDebug, BorderLayout.SOUTH)
+        panel.add(JBScrollPane(form.commandLine), BorderLayout.CENTER)
+        panel.add(form.applyToRunDebug, BorderLayout.SOUTH)
         return panel
     }
 
@@ -157,7 +112,7 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
             it.border = BorderFactory.createTitledBorder(title)
         }
 
-    private fun addFormRow(form: JPanel, row: Int, label: String, field: JComponent?) {
+    private fun addFormRow(form: JPanel, row: Int, label: String, field: JComponent) {
         val labelConstraints = GridBagConstraints().also {
             it.gridx = 0
             it.gridy = row
@@ -175,11 +130,6 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
         }
         form.add(field, fieldConstraints)
     }
-
-    private fun selectedBuildConfiguration(): String =
-        (buildConfigurationComboBox?.selectedItem as? String)
-            ?.takeIf { it in UnrealHelperSettings.BuildConfigurations }
-            ?: UnrealHelperSettings.DefaultBuildConfiguration
 
     private fun discoverySummary(state: UnrealHelperSettingsState): String {
         val lines = mutableListOf<String>()
@@ -200,4 +150,76 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
 
         return lines.joinToString("\n")
     }
+
+    private class SettingsForm {
+        val uprojectPath = JBTextField()
+        val workspaceRoot = JBTextField()
+        val packageDirectory = JBTextField()
+        val engineRoot = JBTextField()
+        val buildConfiguration = ComboBox<String>(UnrealHelperSettings.BuildConfigurations.toTypedArray())
+        val discoverySummary = JBTextArea(6, 72).also { it.isEditable = false }
+        val commandLine = JBTextArea(10, 72)
+        val applyToRunDebug = JCheckBox("Apply global arguments to Rider Run/Debug launches")
+
+        fun values(): SettingsFormValues = SettingsFormValues(
+            uprojectPath = uprojectPath.text,
+            workspaceRoot = workspaceRoot.text,
+            packageDirectory = packageDirectory.text,
+            engineRoot = engineRoot.text,
+            buildConfiguration = selectedBuildConfiguration(),
+            commandLine = commandLine.text,
+            applyToRunDebug = applyToRunDebug.isSelected,
+        )
+
+        fun setValues(values: SettingsFormValues) {
+            uprojectPath.text = values.uprojectPath
+            workspaceRoot.text = values.workspaceRoot
+            packageDirectory.text = values.packageDirectory
+            engineRoot.text = values.engineRoot
+            buildConfiguration.selectedItem = values.buildConfiguration
+            commandLine.text = values.commandLine
+            applyToRunDebug.isSelected = values.applyToRunDebug
+        }
+
+        private fun selectedBuildConfiguration(): String =
+            (buildConfiguration.selectedItem as? String)
+                ?.takeIf { it in UnrealHelperSettings.BuildConfigurations }
+                ?: UnrealHelperSettings.DefaultBuildConfiguration
+    }
+}
+
+internal data class SettingsFormValues(
+    val uprojectPath: String,
+    val workspaceRoot: String,
+    val packageDirectory: String,
+    val engineRoot: String,
+    val buildConfiguration: String,
+    val commandLine: String,
+    val applyToRunDebug: Boolean,
+)
+
+internal fun settingsFormValues(settings: UnrealHelperSettings): SettingsFormValues {
+    val state = settings.state
+    return SettingsFormValues(
+        uprojectPath = state.uprojectPath,
+        workspaceRoot = state.workspaceRoot,
+        packageDirectory = settings.effectivePackageDirectory(),
+        engineRoot = state.engineRoot,
+        buildConfiguration = settings.effectiveBuildConfiguration(),
+        commandLine = CommandLineArguments.toEditorText(state.activeCommandLine),
+        applyToRunDebug = state.applyToRunDebug,
+    )
+}
+
+internal fun applySettingsFormValues(settings: UnrealHelperSettings, values: SettingsFormValues) {
+    val state = settings.state
+    state.uprojectPath = values.uprojectPath.trim()
+    state.workspaceRoot = values.workspaceRoot.trim()
+    state.packageDirectory = values.packageDirectory.trim()
+    state.engineRoot = values.engineRoot.trim()
+    state.buildConfiguration = values.buildConfiguration
+        .takeIf { it in UnrealHelperSettings.BuildConfigurations }
+        ?: UnrealHelperSettings.DefaultBuildConfiguration
+    state.applyToRunDebug = values.applyToRunDebug
+    settings.setActiveCommandLine(CommandLineArguments.fromEditorText(values.commandLine))
 }
