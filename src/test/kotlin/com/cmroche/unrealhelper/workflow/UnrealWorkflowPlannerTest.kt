@@ -33,17 +33,17 @@ class UnrealWorkflowPlannerTest {
             planner.plan(UnrealWorkflowRequest.PACKAGE, configuration, state, null).phases.map { it.phase },
         )
         assertEquals(
-            listOf(UnrealPhase.BUILD, UnrealPhase.COOK, UnrealPhase.LAUNCH),
+            listOf(UnrealPhase.LAUNCH),
             planner.plan(UnrealWorkflowRequest.LAUNCH, configuration, state, null).phases.map { it.phase },
         )
         assertEquals(
-            listOf(UnrealPhase.BUILD, UnrealPhase.COOK, UnrealPhase.LAUNCH),
+            listOf(UnrealPhase.LAUNCH),
             planner.plan(UnrealWorkflowRequest.DEBUG, configuration, state, null).phases.map { it.phase },
         )
     }
 
     @Test
-    fun `three duplicate launch rows build and cook once but launch three times`() {
+    fun `three duplicate launch rows launch three times without build or cook actions`() {
         val duplicate = entry("LyraClient", "Win64", cookOnLaunch = true)
         val plan = planner.plan(
             UnrealWorkflowRequest.LAUNCH,
@@ -52,9 +52,8 @@ class UnrealWorkflowPlannerTest {
             null,
         )
 
-        val build = plan.actions<BuildBatch>().single()
-        assertEquals(1, build.artifacts.size)
-        assertEquals(1, plan.actions<Cook>().size)
+        assertEquals(emptyList<BuildBatch>(), plan.actions<BuildBatch>())
+        assertEquals(emptyList<Cook>(), plan.actions<Cook>())
         assertEquals(listOf(0, 1, 2), plan.actions<Launch>().map { it.rowIndex })
     }
 
@@ -97,7 +96,7 @@ class UnrealWorkflowPlannerTest {
     }
 
     @Test
-    fun `full cook dominates incremental cook for a duplicate artifact`() {
+    fun `launch rows do not add cook actions for full or incremental selections`() {
         val plan = planner.plan(
             UnrealWorkflowRequest.LAUNCH,
             configuration(
@@ -108,7 +107,7 @@ class UnrealWorkflowPlannerTest {
             null,
         )
 
-        assertEquals(UnrealCookMode.FULL, plan.actions<Cook>().single().mode)
+        assertEquals(emptyList<Cook>(), plan.actions<Cook>())
     }
 
     @Test
@@ -124,12 +123,12 @@ class UnrealWorkflowPlannerTest {
             null,
         )
 
-        val cook = plan.actions<Cook>().single()
-        assertEquals(cook.outputDirectory, plan.actions<Launch>()[0].cookedSandbox)
-        assertEquals(cook.outputDirectory, plan.actions<Launch>()[1].cookedSandbox)
+        val cookDirectory = artifactCookDirectory(plan.actions<Launch>()[0].artifact)
+        assertEquals(cookDirectory, plan.actions<Launch>()[0].cookedSandbox)
+        assertEquals(cookDirectory, plan.actions<Launch>()[1].cookedSandbox)
         assertEquals(null, plan.actions<Launch>()[2].cookedSandbox)
-        assertTrue(cook.outputDirectory.toString().contains("LyraClient-Client-Win64-Shipping"))
-        assertTrue(cook.outputDirectory.endsWith("WindowsClient"))
+        assertTrue(cookDirectory.toString().contains("LyraClient-Client-Win64-Shipping"))
+        assertTrue(cookDirectory.endsWith("WindowsClient"))
     }
 
     @Test

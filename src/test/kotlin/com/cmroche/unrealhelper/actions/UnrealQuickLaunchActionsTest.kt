@@ -31,7 +31,7 @@ class UnrealQuickLaunchActionsTest {
         assertNull(error)
         val plan = execution.started.single()
         assertEquals(UnrealWorkflowRequest.LAUNCH, plan.request)
-        assertEquals(listOf("BUILD", "LAUNCH"), plan.phases.map { it.phase.name })
+        assertEquals(listOf("LAUNCH"), plan.phases.map { it.phase.name })
     }
 
     @Test
