@@ -31,7 +31,6 @@ class UnrealHelperSettingsState {
     var activeCommandLine: String = ""
     var savedCommandLines: MutableList<String> = mutableListOf()
     var recentCommandLines: MutableList<String> = mutableListOf()
-    var applyToRunDebug: Boolean = true
     var quickLaunchProfiles: MutableList<QuickLaunchProfileState> = mutableListOf()
 }
 

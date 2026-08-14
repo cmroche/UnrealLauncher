@@ -14,8 +14,7 @@ data class RunConfigurationMatchData(
 
 object UnrealRunConfigurationMatcher {
     fun hasInjectionSettings(state: UnrealHelperSettingsState): Boolean =
-        state.applyToRunDebug &&
-            state.activeCommandLine.isNotBlank() &&
+        state.activeCommandLine.isNotBlank() &&
             hasUnrealProjectContext(state)
 
     fun hasUnrealProjectContext(state: UnrealHelperSettingsState): Boolean =
