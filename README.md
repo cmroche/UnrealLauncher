@@ -9,7 +9,7 @@ _Why do I want this?_
 
 If you've worked on multiplayer games, you'll know how tedious it can be to switch from Editor to Client/Server for testing, especially since Rider doesn't support launch and debugging both Client and Server in a single IDE session. With **Unreal Launcher**, you configure sets of targets, such as "Client + Server", or "2x Client + Server" and use the quick actions in the toolbar to Cook and Run.
 
-Configurations are saved under `.UnrealHelper`, and can be submitted with your project for everyone to enjoy.
+Configurations are saved in `.unrealhelper/target-platforms.json` and can be committed with your project for the whole team to use.
 
 ## Installation
 
@@ -17,7 +17,23 @@ Download `UnrealLauncher-vX.Y.Z.zip` from the latest [GitHub Release](https://gi
 
 ## Using Unreal Launcher
 
-/coming soon/
+### Build, Cook, Package, Launch, or Debug
+
+Select a configuration, then build, cook, package, launch, or debug every target directly from Rider's toolbar.
+
+![Unreal Launcher workflow toolbar](images/unreal-launcher-toolbar.png)
+
+### Select a Configuration and Global Arguments
+
+Choose a shared Target & Platform configuration and optionally add global arguments to every launched or debugged process.
+
+![Selecting Unreal Launcher global arguments](images/unreal-launcher-global-arguments.png)
+
+### Create a Target & Platform Configuration
+
+Choose **Configure ...** to create a shareable set of targets, platforms, arguments, and cooking options for your project.
+
+![Target and Platform configuration editor](images/unreal-launcher-target-platform-configurations.png)
 
 ## Contributing
 
