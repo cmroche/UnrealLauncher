@@ -4,11 +4,13 @@ import java.nio.file.Path
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
-enum class UnrealWorkflowRequest { BUILD, COOK, PACKAGE, LAUNCH }
+enum class UnrealWorkflowRequest { BUILD, COOK, PACKAGE, LAUNCH, DEBUG }
 
 enum class UnrealPhase { BUILD, COOK, STAGE, PACKAGE, LAUNCH }
 
 enum class UnrealCookMode { FULL, INCREMENTAL }
+
+enum class UnrealLaunchMode { RUN, DEBUG }
 
 data class UnrealArtifactKey(
     val projectPath: Path,
@@ -66,6 +68,7 @@ data class Launch(
     val entryArguments: String,
     val globalArguments: String,
     val cookedSandbox: Path? = null,
+    val mode: UnrealLaunchMode = UnrealLaunchMode.RUN,
 ) : UnrealPlannedAction {
     override val phase: UnrealPhase = UnrealPhase.LAUNCH
     override val artifacts: Set<UnrealArtifactKey> = setOf(artifact)

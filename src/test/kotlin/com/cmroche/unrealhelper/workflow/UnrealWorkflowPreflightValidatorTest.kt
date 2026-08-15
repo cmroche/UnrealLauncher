@@ -89,6 +89,7 @@ class UnrealWorkflowPreflightValidatorTest {
             UnrealWorkflowRequest.COOK to false,
             UnrealWorkflowRequest.PACKAGE to false,
             UnrealWorkflowRequest.LAUNCH to true,
+            UnrealWorkflowRequest.DEBUG to true,
         ).forEach { (request, cookOnLaunch) ->
             val configuration = TargetPlatformConfiguration(
                 name = "Editor",
@@ -153,44 +154,50 @@ class UnrealWorkflowPreflightValidatorTest {
     }
 
     @Test
-    fun `launch without cook requires UBT but not UAT or package destination`() {
+    fun `launch and debug without cook require UBT but not UAT or package destination`() {
         val fixture = fixture(createUbt = false, createUat = false, cookOnLaunch = false)
         fixture.state.packageDirectory = fixture.workspace.resolve("missing-package").toString()
 
-        val missingUbtErrors = validator().validate(
-            UnrealWorkflowRequest.LAUNCH,
-            fixture.configuration,
-            fixture.state,
-            fixture.workspace.toString(),
-        )
-        assertEquals(1, missingUbtErrors.size)
-        assertTrue(missingUbtErrors.single().startsWith("UnrealBuildTool was not found at "))
-
-        createTool(Path.of(fixture.state.engineRoot), ubtRelativePath())
-        assertEquals(
-            emptyList<String>(),
-            validator().validate(
-                UnrealWorkflowRequest.LAUNCH,
+        listOf(UnrealWorkflowRequest.LAUNCH, UnrealWorkflowRequest.DEBUG).forEach { request ->
+            val missingUbtErrors = validator().validate(
+                request,
                 fixture.configuration,
                 fixture.state,
                 fixture.workspace.toString(),
-            ),
-        )
+            )
+            assertEquals(1, missingUbtErrors.size)
+            assertTrue(missingUbtErrors.single().startsWith("UnrealBuildTool was not found at "))
+        }
+
+        createTool(Path.of(fixture.state.engineRoot), ubtRelativePath())
+        listOf(UnrealWorkflowRequest.LAUNCH, UnrealWorkflowRequest.DEBUG).forEach { request ->
+            assertEquals(
+                emptyList<String>(),
+                validator().validate(
+                    request,
+                    fixture.configuration,
+                    fixture.state,
+                    fixture.workspace.toString(),
+                ),
+            )
+        }
     }
 
     @Test
-    fun `launch with cook requires UAT`() {
+    fun `launch and debug with cook require UAT`() {
         val fixture = fixture(createUbt = true, createUat = false, cookOnLaunch = true)
 
-        val errors = validator().validate(
-            UnrealWorkflowRequest.LAUNCH,
-            fixture.configuration,
-            fixture.state,
-            fixture.workspace.toString(),
-        )
+        listOf(UnrealWorkflowRequest.LAUNCH, UnrealWorkflowRequest.DEBUG).forEach { request ->
+            val errors = validator().validate(
+                request,
+                fixture.configuration,
+                fixture.state,
+                fixture.workspace.toString(),
+            )
 
-        assertEquals(1, errors.size)
-        assertTrue(errors.single().startsWith("RunUAT was not found at "))
+            assertEquals(1, errors.size)
+            assertTrue(errors.single().startsWith("RunUAT was not found at "))
+        }
     }
 
     @Test

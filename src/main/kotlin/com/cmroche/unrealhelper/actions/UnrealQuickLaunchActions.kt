@@ -16,6 +16,8 @@ import com.intellij.openapi.project.DumbAwareAction
 
 internal class UnrealLaunchAction : UnrealWorkflowAction(UnrealWorkflowRequest.LAUNCH)
 
+internal class UnrealDebugAction : UnrealWorkflowAction(UnrealWorkflowRequest.DEBUG)
+
 internal class UnrealStopLaunchAction : DumbAwareAction("Stop", "Stop selected UnrealHelper launches", null) {
     override fun update(event: AnActionEvent) {
         val project = event.project

@@ -48,7 +48,9 @@ class UnrealWorkflowPlanner {
                 })
             }
 
-            UnrealWorkflowRequest.LAUNCH -> buildList {
+            UnrealWorkflowRequest.LAUNCH,
+            UnrealWorkflowRequest.DEBUG,
+            -> buildList {
                 addBuild(artifacts)
                 addPhase(
                     UnrealPhase.COOK,
@@ -77,6 +79,11 @@ class UnrealWorkflowPlanner {
                             entryArguments = entry.arguments,
                             globalArguments = inputs.globalArguments,
                             cookedSandbox = artifactCookDirectory(artifact).takeIf { entry.cookOnLaunch },
+                            mode = if (inputs.request == UnrealWorkflowRequest.DEBUG) {
+                                UnrealLaunchMode.DEBUG
+                            } else {
+                                UnrealLaunchMode.RUN
+                            },
                         )
                     },
                 )
