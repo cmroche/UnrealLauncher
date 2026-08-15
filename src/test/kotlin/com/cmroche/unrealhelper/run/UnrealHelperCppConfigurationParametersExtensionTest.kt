@@ -54,19 +54,9 @@ class UnrealHelperCppConfigurationParametersExtensionTest {
         assertEquals("--tool-mode", parameters.programParameters)
     }
 
-    @Test
-    fun `does not inject when Run Debug integration is disabled`() {
-        val state = enabledState().also { it.applyToRunDebug = false }
-        val parameters = parameters("\"/Project/Lyra/Lyra.uproject\"")
-
-        assertFalse(injectGlobalArgsIntoRiderUproject(parameters, state))
-        assertEquals("\"/Project/Lyra/Lyra.uproject\"", parameters.programParameters)
-    }
-
     private fun enabledState(): UnrealHelperSettingsState = UnrealHelperSettingsState().also {
         it.uprojectPath = "/Project/Lyra/Lyra.uproject"
         it.activeCommandLine = "-game -log -newconsole"
-        it.applyToRunDebug = true
     }
 
     private fun parameters(programParameters: String): ExeConfigurationParameters =
