@@ -8,11 +8,8 @@ import org.junit.Test
 
 class UnrealRunConfigurationMatcherTest {
     @Test
-    fun `settings are not injectable when disabled`() {
-        val state = unrealState()
-        state.applyToRunDebug = false
-
-        assertFalse(UnrealRunConfigurationMatcher.hasInjectionSettings(state))
+    fun `settings are injectable with active args and Unreal project context`() {
+        assertTrue(UnrealRunConfigurationMatcher.hasInjectionSettings(unrealState()))
     }
 
     @Test

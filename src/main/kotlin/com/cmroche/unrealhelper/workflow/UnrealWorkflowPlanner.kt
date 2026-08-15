@@ -51,24 +51,6 @@ class UnrealWorkflowPlanner {
             UnrealWorkflowRequest.LAUNCH,
             UnrealWorkflowRequest.DEBUG,
             -> buildList {
-                addBuild(artifacts)
-                addPhase(
-                    UnrealPhase.COOK,
-                    deduplicateCooks(
-                        inputs.entries.mapNotNull { (entry, artifact) ->
-                            entry.takeIf { it.cookOnLaunch }?.let {
-                                Cook(
-                                    artifact = artifact,
-                                    mode = if (it.incrementalCookOnLaunch) {
-                                        UnrealCookMode.INCREMENTAL
-                                    } else {
-                                        UnrealCookMode.FULL
-                                    },
-                                )
-                            }
-                        },
-                    ),
-                )
                 addPhase(
                     UnrealPhase.LAUNCH,
                     inputs.entries.map { (entry, artifact) ->

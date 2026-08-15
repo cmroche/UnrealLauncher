@@ -88,8 +88,6 @@ class UnrealWorkflowPreflightValidatorTest {
         listOf(
             UnrealWorkflowRequest.COOK to false,
             UnrealWorkflowRequest.PACKAGE to false,
-            UnrealWorkflowRequest.LAUNCH to true,
-            UnrealWorkflowRequest.DEBUG to true,
         ).forEach { (request, cookOnLaunch) ->
             val configuration = TargetPlatformConfiguration(
                 name = "Editor",
@@ -154,22 +152,10 @@ class UnrealWorkflowPreflightValidatorTest {
     }
 
     @Test
-    fun `launch and debug without cook require UBT but not UAT or package destination`() {
+    fun `launch and debug require neither UBT nor UAT or package destination`() {
         val fixture = fixture(createUbt = false, createUat = false, cookOnLaunch = false)
         fixture.state.packageDirectory = fixture.workspace.resolve("missing-package").toString()
 
-        listOf(UnrealWorkflowRequest.LAUNCH, UnrealWorkflowRequest.DEBUG).forEach { request ->
-            val missingUbtErrors = validator().validate(
-                request,
-                fixture.configuration,
-                fixture.state,
-                fixture.workspace.toString(),
-            )
-            assertEquals(1, missingUbtErrors.size)
-            assertTrue(missingUbtErrors.single().startsWith("UnrealBuildTool was not found at "))
-        }
-
-        createTool(Path.of(fixture.state.engineRoot), ubtRelativePath())
         listOf(UnrealWorkflowRequest.LAUNCH, UnrealWorkflowRequest.DEBUG).forEach { request ->
             assertEquals(
                 emptyList<String>(),
@@ -184,19 +170,19 @@ class UnrealWorkflowPreflightValidatorTest {
     }
 
     @Test
-    fun `launch and debug with cook require UAT`() {
-        val fixture = fixture(createUbt = true, createUat = false, cookOnLaunch = true)
+    fun `launch and debug with cook selected still do not require UAT`() {
+        val fixture = fixture(createUbt = false, createUat = false, cookOnLaunch = true)
 
         listOf(UnrealWorkflowRequest.LAUNCH, UnrealWorkflowRequest.DEBUG).forEach { request ->
-            val errors = validator().validate(
-                request,
-                fixture.configuration,
-                fixture.state,
-                fixture.workspace.toString(),
+            assertEquals(
+                emptyList<String>(),
+                validator().validate(
+                    request,
+                    fixture.configuration,
+                    fixture.state,
+                    fixture.workspace.toString(),
+                ),
             )
-
-            assertEquals(1, errors.size)
-            assertTrue(errors.single().startsWith("RunUAT was not found at "))
         }
     }
 
@@ -220,21 +206,21 @@ class UnrealWorkflowPreflightValidatorTest {
 
     @Test
     fun `rejects phases outside canonical order`() {
-        val fixture = fixture(cookOnLaunch = true)
+        val fixture = fixture()
         val validator = UnrealWorkflowPreflightValidator(plan = { inputs ->
             val valid = UnrealWorkflowPlanner().plan(inputs)
             valid.copy(phases = valid.phases.reversed())
         })
 
         val errors = validator.validate(
-            UnrealWorkflowRequest.LAUNCH,
+            UnrealWorkflowRequest.PACKAGE,
             fixture.configuration,
             fixture.state,
             fixture.workspace.toString(),
         )
 
         assertEquals(
-            listOf("Workflow plan for configuration 'Client' has invalid phase order: LAUNCH, COOK, BUILD"),
+            listOf("Workflow plan for configuration 'Client' has invalid phase order: PACKAGE, STAGE, COOK, BUILD"),
             errors,
         )
     }

@@ -22,7 +22,7 @@
         parentId="tools"
         instance="com.cmroche.unrealhelper.settings.UnrealHelperConfigurable"
         id="com.cmroche.unrealhelper.settings"
-        displayName="UnrealHelper"/>
+        displayName="Unreal Launcher"/>
   </extensions>
 
   <extensions defaultExtensionNs="com.jetbrains.rider-cpp">

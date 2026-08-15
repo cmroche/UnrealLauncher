@@ -5,6 +5,7 @@ import com.cmroche.unrealhelper.discovery.UnrealProjectDiscoveryResult
 import com.cmroche.unrealhelper.discovery.UnrealTargetType
 import com.cmroche.unrealhelper.launch.QuickLaunchProfileState
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.JDOMUtil
 import com.intellij.util.xmlb.XmlSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,15 +13,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.awt.Component
 import java.awt.Container
+import java.io.File
 import java.lang.reflect.Proxy
 import javax.swing.AbstractButton
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.border.TitledBorder
+import javax.swing.text.JTextComponent
 
 class UnrealHelperSettingsTest {
     @Test
-    fun `configurable component omits legacy target platform editors`() {
+    fun `configurable component only exposes read only diagnostics`() {
         val settings = UnrealHelperSettings().also {
             it.state.selectedTargetTypes = mutableListOf("Game")
             it.state.selectedPlatforms = mutableListOf("Win64")
@@ -34,15 +37,23 @@ class UnrealHelperSettingsTest {
         }
         val configurable = UnrealHelperConfigurable(projectWithSettings(settings))
 
-        val labels = componentTexts(configurable.createComponent())
+        val component = configurable.createComponent()
+        val labels = componentTexts(component)
 
+        assertEquals("Unreal Launcher", configurable.displayName)
         assertTrue(labels.contains("Project"))
         assertTrue(labels.contains("Detection"))
-        assertTrue(labels.contains("Global Run/Debug Args"))
+        assertFalse(labels.contains("Global Run/Debug Args"))
+        assertFalse(labels.contains("Global launch arguments, one option per line:"))
+        assertFalse(labels.contains("Apply global arguments to Rider Run/Debug launches"))
         assertFalse(labels.contains("Targets And Platforms"))
         assertFalse(labels.contains("Target Types:"))
         assertFalse(labels.contains("Platforms:"))
         assertFalse(labels.contains("Quick Launch"))
+        assertTrue(components(component).filterIsInstance<JTextComponent>().all { !it.isEditable })
+
+        val pluginXml = File("src/main/resources/META-INF/plugin.xml").readText()
+        assertTrue(pluginXml.contains("displayName=\"Unreal Launcher\""))
     }
 
     @Test
@@ -54,7 +65,6 @@ class UnrealHelperSettingsTest {
         assertEquals("", settings.state.packageDirectory)
         assertEquals("Packages", settings.effectivePackageDirectory())
         assertEquals("", settings.state.activeCommandLine)
-        assertTrue(settings.state.applyToRunDebug)
         assertTrue(settings.state.savedCommandLines.isEmpty())
         assertTrue(settings.state.recentCommandLines.isEmpty())
         assertEquals(listOf("Game", "Client", "Server"), settings.state.selectedTargetTypes)
@@ -96,6 +106,22 @@ class UnrealHelperSettingsTest {
         settings.loadState(loadedState)
 
         assertEquals("-game -windowed -log", settings.state.activeCommandLine)
+    }
+
+    @Test
+    fun `legacy disabled run debug setting does not block state loading`() {
+        val legacyState = JDOMUtil.load(
+            """
+            <UnrealHelperSettingsState>
+              <option name="activeCommandLine" value="-game -log" />
+              <option name="applyToRunDebug" value="false" />
+            </UnrealHelperSettingsState>
+            """.trimIndent(),
+        )
+
+        val loadedState = XmlSerializer.deserialize(legacyState, UnrealHelperSettingsState::class.java)
+
+        assertEquals("-game -log", loadedState.activeCommandLine)
     }
 
     @Test
@@ -343,4 +369,11 @@ class UnrealHelperSettingsTest {
         }
         return texts
     }
+
+    private fun components(component: Component): List<Component> =
+        listOf(component) + if (component is Container) {
+            component.components.flatMap(::components)
+        } else {
+            emptyList()
+        }
 }
