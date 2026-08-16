@@ -1,6 +1,7 @@
 import org.gradle.process.CommandLineArgumentProvider
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.BuildPluginTask
+import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.zip.ZipFile
@@ -67,6 +68,12 @@ kotlin {
 }
 
 tasks {
+    withType<PrepareSandboxTask>().configureEach {
+        from(rootProject.files("LICENSE", "NOTICE")) {
+            into(pluginName)
+        }
+    }
+
     val buildPluginTask = named<BuildPluginTask>("buildPlugin") {
         archiveFileName = pluginVersion.map { "UnrealLauncher-v$it.zip" }
     }
@@ -86,6 +93,14 @@ tasks {
             val expectedArchiveName = "UnrealLauncher-v$expectedVersion.zip"
             check(archive.name == expectedArchiveName) {
                 "Expected release archive '$expectedArchiveName', found '${archive.name}'"
+            }
+
+            ZipFile(archive).use { distributionZip ->
+                listOf("LICENSE", "NOTICE").forEach { fileName ->
+                    check(distributionZip.getEntry("${rootProject.name}/$fileName") != null) {
+                        "Release archive does not contain '${rootProject.name}/$fileName'"
+                    }
+                }
             }
 
             val pluginXml = ZipFile(archive).use { distributionZip ->

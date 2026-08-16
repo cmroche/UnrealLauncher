@@ -35,6 +35,10 @@ Choose **Configure ...** to create a shareable set of targets, platforms, argume
 
 ![Target and Platform configuration editor](images/unreal-launcher-target-platform-configurations.png)
 
+## License
+
+Unreal Launcher is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution information.
+
 ## Contributing
 
 ### SemVer and Conventional Commit
