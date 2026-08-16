@@ -10,15 +10,14 @@ import com.intellij.build.DefaultBuildDescriptor
 import com.intellij.build.events.EventResult
 import com.intellij.build.events.BuildEvent
 import com.intellij.build.events.BuildEventPresentationData
-import com.intellij.build.events.impl.OutputBuildEventImpl
-import com.intellij.build.events.impl.PresentableBuildEventImpl
-import com.intellij.build.events.impl.FinishEventImpl
+import com.intellij.build.events.FinishEvent
+import com.intellij.build.events.OutputBuildEvent
+import com.intellij.build.events.PresentableBuildEvent
 import com.intellij.build.events.impl.FailureResultImpl
 import com.intellij.build.events.impl.SkippedResultImpl
 import com.intellij.build.events.impl.SuccessResultImpl
 import com.intellij.build.progress.BuildProgress
 import com.intellij.build.progress.BuildProgressDescriptor
-import com.intellij.build.progress.BuildProgressDescriptorImpl
 import com.intellij.execution.process.ProcessOutputType
 import com.intellij.execution.ui.ExecutionConsole
 import com.intellij.openapi.actionSystem.ActionGroup
@@ -127,7 +126,10 @@ private class BuildViewUnrealWorkflowPresenter(
 }
 
 internal fun unrealBuildProgressDescriptor(descriptor: BuildDescriptor): BuildProgressDescriptor =
-    BuildProgressDescriptorImpl("UE Launcher", descriptor)
+    object : BuildProgressDescriptor {
+        override fun getTitle(): String = "Unreal Launcher"
+        override fun getBuildDescriptor(): BuildDescriptor = descriptor
+    }
 
 internal class UnrealBuildTreeEventAdapter(
     private val buildId: Any,
@@ -157,20 +159,26 @@ internal class UnrealBuildTreeEventAdapter(
     }
 
     fun output(action: UnrealPlannedAction, text: String, type: ProcessOutputType) {
-        emit(OutputBuildEventImpl(UUID.randomUUID(), actionId(action), now(), text, null, null, type))
+        emit(
+            UnrealOutputBuildEvent(
+                id = UUID.randomUUID(),
+                parentId = actionId(action),
+                eventTime = now(),
+                message = text,
+                outputType = type,
+            ),
+        )
     }
 
     fun finished(action: UnrealPlannedAction, result: UnrealActionResult) {
         states.finish(action, result)
         emit(
-            FinishEventImpl(
-                actionId(action),
-                phaseId(action.phase),
-                now(),
-                "${status(result)}: ${action.displayName()}",
-                null,
-                null,
-                actionResult(result),
+            UnrealFinishEvent(
+                id = actionId(action),
+                parentId = phaseId(action.phase),
+                eventTime = now(),
+                message = "${status(result)}: ${action.displayName()}",
+                result = actionResult(result),
             ),
         )
         phaseResults[action.phase] = combine(phaseResults[action.phase] ?: UnrealActionResult.Success, result)
@@ -178,21 +186,27 @@ internal class UnrealBuildTreeEventAdapter(
         if (phaseActions.all { states.stateOf(it).isTerminal }) {
             val phaseResult = phaseResults.getValue(action.phase)
             emit(
-                FinishEventImpl(
-                    phaseId(action.phase),
-                    buildId,
-                    now(),
-                    "${status(phaseResult)}: ${phaseTitle(action.phase)}",
-                    null,
-                    null,
-                    actionResult(phaseResult),
+                UnrealFinishEvent(
+                    id = phaseId(action.phase),
+                    parentId = buildId,
+                    eventTime = now(),
+                    message = "${status(phaseResult)}: ${phaseTitle(action.phase)}",
+                    result = actionResult(phaseResult),
                 ),
             )
         }
     }
 
     private fun emitNode(id: Any, parentId: Any, message: String) {
-        emit(PresentableBuildEventImpl(id, parentId, now(), message, null, null, NodePresentation))
+        emit(
+            UnrealPresentableBuildEvent(
+                id = id,
+                parentId = parentId,
+                eventTime = now(),
+                message = message,
+                presentationData = NodePresentation,
+            ),
+        )
     }
 
     private fun actionId(action: UnrealPlannedAction): Any =
@@ -212,6 +226,50 @@ internal class UnrealBuildTreeEventAdapter(
         override fun getExecutionConsole(): ExecutionConsole? = null
         override fun consoleToolbarActions(): ActionGroup? = null
     }
+}
+
+private open class UnrealBuildEvent(
+    private val id: Any,
+    private val parentId: Any,
+    private val eventTime: Long,
+    private val message: String,
+) : BuildEvent {
+    override fun getId(): Any = id
+    override fun getParentId(): Any = parentId
+    override fun getEventTime(): Long = eventTime
+    override fun getMessage(): String = message
+    override fun getHint(): String? = null
+    override fun getDescription(): String? = null
+}
+
+private class UnrealOutputBuildEvent(
+    id: Any,
+    parentId: Any,
+    eventTime: Long,
+    message: String,
+    private val outputType: ProcessOutputType,
+) : UnrealBuildEvent(id, parentId, eventTime, message), OutputBuildEvent {
+    override fun getOutputType(): ProcessOutputType = outputType
+}
+
+private class UnrealFinishEvent(
+    id: Any,
+    parentId: Any,
+    eventTime: Long,
+    message: String,
+    private val result: EventResult,
+) : UnrealBuildEvent(id, parentId, eventTime, message), FinishEvent {
+    override fun getResult(): EventResult = result
+}
+
+private class UnrealPresentableBuildEvent(
+    id: Any,
+    parentId: Any,
+    eventTime: Long,
+    message: String,
+    private val presentationData: BuildEventPresentationData,
+) : UnrealBuildEvent(id, parentId, eventTime, message), PresentableBuildEvent {
+    override fun getPresentationData(): BuildEventPresentationData = presentationData
 }
 
 internal enum class UnrealPresentationActionState(val isTerminal: Boolean) {

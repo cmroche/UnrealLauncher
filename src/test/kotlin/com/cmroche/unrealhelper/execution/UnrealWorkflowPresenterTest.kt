@@ -7,12 +7,12 @@ import org.junit.Test
 
 class UnrealWorkflowPresenterTest {
     @Test
-    fun `build progress uses UE Launcher tab title`() {
+    fun `build progress uses Unreal Launcher tab title`() {
         val descriptor = DefaultBuildDescriptor("id", "Workflow title", "/project", 1L)
 
         val progressDescriptor = unrealBuildProgressDescriptor(descriptor)
 
-        assertEquals("UE Launcher", progressDescriptor.title)
+        assertEquals("Unreal Launcher", progressDescriptor.title)
         assertSame(descriptor, progressDescriptor.buildDescriptor)
     }
 }

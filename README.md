@@ -13,7 +13,7 @@ Configurations are saved in `.unrealhelper/target-platforms.json` and can be com
 
 ## Installation
 
-Download `UnrealLauncher-vX.Y.Z.zip` from the latest [GitHub Release](https://github.com/cmroche/UnrealHelper/releases). In Rider, open **Settings | Plugins**, choose **Install Plugin from Disk** from the gear menu, select the ZIP without extracting it, and restart Rider when prompted.
+Download `UnrealLauncher-vX.Y.Z.zip` from the latest [GitHub Release](https://github.com/cmroche/UnrealLauncher/releases). In Rider, open **Settings | Plugins**, choose **Install Plugin from Disk** from the gear menu, select the ZIP without extracting it, and restart Rider when prompted.
 
 ## Using Unreal Launcher
 
@@ -50,7 +50,7 @@ Use `type(optional-scope): description` for the title. Release impact is:
 - `build:`, `chore:`, `ci:`, `docs:`, `refactor:`, `style:`, and `test:` create no release.
 - A title using `!`, or a body footer written exactly as `BREAKING CHANGE: description`, creates a major release. Titles using `!` must include that footer in the PR body.
 
-PR checks validate the title and body and run the plugin tests and build. These checks are advisory until required branch-protection checks are available for this private repository, so confirm they pass before squash merging.
+PR checks validate the title and body and run the plugin tests and build. Confirm they pass before squash merging.
 
 ### Building
 

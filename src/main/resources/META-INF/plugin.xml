@@ -1,11 +1,31 @@
-<idea-plugin>
+<idea-plugin url="https://github.com/cmroche/UnrealLauncher">
   <id>com.cmroche.unrealhelper</id>
   <name>Unreal Launcher</name>
-  <vendor>com.cmroche</vendor>
+  <vendor url="https://github.com/cmroche/UnrealLauncher">Clifford Roche</vendor>
 
   <description><![CDATA[
-    UnrealHelper adds Rider toolbar workflows for Unreal Engine launch arguments, build operations, and quick launch tasks.
+    <p>
+      Unreal Launcher adds coordinated Unreal Engine workflows to JetBrains Rider.
+      Create project-shared Target &amp; Platform configurations, then build, cook,
+      package, launch, or debug every configured target from Rider's toolbar.
+    </p>
+    <p>
+      Global launch arguments can also be applied consistently to compatible Rider
+      Run and Debug configurations. Configuration files are stored under
+      <code>.unrealhelper</code> so teams can commit and reuse them.
+    </p>
+    <p>
+      Unreal and Unreal Engine are trademarks or registered trademarks of Epic Games, Inc.
+      This independent project is not affiliated with or endorsed by Epic Games, Inc.
+    </p>
   ]]></description>
+
+  <change-notes><![CDATA[
+    <p>
+      See the <a href="https://github.com/cmroche/UnrealLauncher/releases">GitHub releases</a>
+      for version-specific changes.
+    </p>
+  ]]></change-notes>
 
   <depends>com.intellij.modules.rider</depends>
   <depends>com.jetbrains.rider-cpp</depends>
