@@ -1,7 +1,6 @@
 package com.cmroche.unrealhelper.command
 
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
-import com.cmroche.unrealhelper.workflow.artifactCookDirectory
 import com.cmroche.unrealhelper.workflow.artifactStageDirectory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -40,7 +39,6 @@ object UnrealCommandBuilder {
     fun cook(
         context: UnrealCommandContext,
         mode: UnrealCookMode,
-        outputDirectory: Path = artifactCookDirectory(context.artifact),
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand =
         uatCommand(
@@ -49,13 +47,11 @@ object UnrealCommandBuilder {
             phaseArguments = buildList {
                 addAll(listOf("-skipbuild", "-cook", "-skipstage", "-skippackage"))
                 if (mode == UnrealCookMode.INCREMENTAL) add("-cookincremental")
-                add("-CookOutputDir=$outputDirectory")
             },
         )
 
     fun stage(
         context: UnrealCommandContext,
-        cookOutputDirectory: Path = artifactCookDirectory(context.artifact),
         stagingDirectory: Path = artifactStageDirectory(context.artifact),
         osName: String = System.getProperty("os.name"),
     ): UnrealCommand =
@@ -64,13 +60,12 @@ object UnrealCommandBuilder {
             osName = osName,
             phaseArguments = listOf(
                 "-skipbuild", "-skipcook", "-stage", "-skippackage",
-                "-CookOutputDir=$cookOutputDirectory", "-stagingdirectory=$stagingDirectory",
+                "-stagingdirectory=$stagingDirectory",
             ),
         )
 
     fun packageProject(
         context: UnrealCommandContext,
-        cookOutputDirectory: Path = artifactCookDirectory(context.artifact),
         stagingDirectory: Path = artifactStageDirectory(context.artifact),
         archiveDirectory: Path = context.packageDirectory,
         osName: String = System.getProperty("os.name"),
@@ -82,7 +77,6 @@ object UnrealCommandBuilder {
                 "-skipbuild",
                 "-skipcook",
                 "-skipstage",
-                "-CookOutputDir=$cookOutputDirectory",
                 "-stagingdirectory=$stagingDirectory",
                 "-package",
                 "-pak",

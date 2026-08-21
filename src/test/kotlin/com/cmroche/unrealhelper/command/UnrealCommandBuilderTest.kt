@@ -2,7 +2,6 @@ package com.cmroche.unrealhelper.command
 
 import com.cmroche.unrealhelper.workflow.UnrealArtifactKey
 import com.cmroche.unrealhelper.workflow.UnrealCookMode
-import com.cmroche.unrealhelper.workflow.artifactCookDirectory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -86,7 +85,6 @@ class UnrealCommandBuilderTest {
                 "-cook",
                 "-skipstage",
                 "-skippackage",
-                "-CookOutputDir=${artifactCookDirectory(context.artifact)}",
                 "-client",
                 "-targetplatform=Win64",
                 "-clientconfig=Development",
@@ -111,11 +109,10 @@ class UnrealCommandBuilderTest {
     }
 
     @Test
-    fun `cook writes to its artifact specific output directory`() {
-        val output = Path.of("/Workspace/Lyra/Saved/UnrealHelper/Cooked/LyraClient/WindowsClient")
-        val command = UnrealCommandBuilder.cook(context(), UnrealCookMode.FULL, output)
+    fun `cook lets RunUAT select its default output directory`() {
+        val command = UnrealCommandBuilder.cook(context(), UnrealCookMode.FULL)
 
-        assertTrue(command.arguments.contains("-CookOutputDir=$output"))
+        assertTrue(command.arguments.none { it.startsWith("-CookOutputDir=") })
     }
 
     @Test
@@ -135,7 +132,6 @@ class UnrealCommandBuilderTest {
                 "-skipcook",
                 "-stage",
                 "-skippackage",
-                "-CookOutputDir=/cook/LyraServer",
                 "-stagingdirectory=/stage/LyraServer",
                 "-server",
                 "-noclient",
@@ -144,7 +140,6 @@ class UnrealCommandBuilderTest {
             ),
             UnrealCommandBuilder.stage(
                 context(targetName = "LyraServer", targetType = "Server"),
-                Path.of("/cook/LyraServer"),
                 Path.of("/stage/LyraServer"),
             ).arguments,
         )
@@ -159,7 +154,6 @@ class UnrealCommandBuilderTest {
                 packageDirectory = Path.of("/Artifacts/Lyra"),
                 buildConfiguration = "Shipping",
             ),
-            Path.of("/cook/LyraClient"),
             Path.of("/stage/LyraClient"),
             Path.of("/Artifacts/Lyra/LyraClient"),
         )
@@ -174,7 +168,6 @@ class UnrealCommandBuilderTest {
                 "-skipbuild",
                 "-skipcook",
                 "-skipstage",
-                "-CookOutputDir=/cook/LyraClient",
                 "-stagingdirectory=/stage/LyraClient",
                 "-package",
                 "-pak",

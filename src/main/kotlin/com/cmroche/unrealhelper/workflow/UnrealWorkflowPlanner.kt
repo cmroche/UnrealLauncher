@@ -78,7 +78,7 @@ class UnrealWorkflowPlanner {
                             rowIndex = entry.index,
                             entryArguments = entry.arguments,
                             globalArguments = inputs.globalArguments,
-                            cookedSandbox = artifactCookDirectory(artifact).takeIf { entry.cookOnLaunch },
+                            cookedSandbox = defaultCookDirectory(artifact).takeIf { entry.cookOnLaunch },
                             mode = if (inputs.request == UnrealWorkflowRequest.DEBUG) {
                                 UnrealLaunchMode.DEBUG
                             } else {
