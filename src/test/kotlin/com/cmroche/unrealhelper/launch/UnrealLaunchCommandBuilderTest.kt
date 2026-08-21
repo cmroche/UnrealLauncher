@@ -11,7 +11,7 @@ import java.nio.file.Path
 class UnrealLaunchCommandBuilderTest {
     @Test
     fun `cooked launch uses its loose cook sandbox`() {
-        val sandbox = Path.of("/Workspace/Lyra/Saved/UnrealHelper/Cooked/LyraClient/WindowsClient")
+        val sandbox = Path.of("/Workspace/Lyra/Saved/Cooked/WindowsClient")
         val command = UnrealLaunchCommandBuilder.build(
             launch(cookedSandbox = sandbox),
             artifact(),

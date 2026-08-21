@@ -36,7 +36,6 @@ data class BuildBatch(
 data class Cook(
     val artifact: UnrealArtifactKey,
     val mode: UnrealCookMode,
-    val outputDirectory: Path = artifactCookDirectory(artifact),
 ) : UnrealPlannedAction {
     override val phase: UnrealPhase = UnrealPhase.COOK
     override val artifacts: Set<UnrealArtifactKey> = setOf(artifact)
@@ -44,7 +43,6 @@ data class Cook(
 
 data class Stage(
     val artifact: UnrealArtifactKey,
-    val cookOutputDirectory: Path = artifactCookDirectory(artifact),
     val stagingDirectory: Path = artifactStageDirectory(artifact),
 ) : UnrealPlannedAction {
     override val phase: UnrealPhase = UnrealPhase.STAGE
@@ -53,7 +51,6 @@ data class Stage(
 
 data class Package(
     val artifact: UnrealArtifactKey,
-    val cookOutputDirectory: Path = artifactCookDirectory(artifact),
     val stagingDirectory: Path = artifactStageDirectory(artifact),
     val archiveDirectory: Path? = null,
 ) : UnrealPlannedAction {
@@ -98,9 +95,8 @@ data class UnrealExecutionPlan(
     val phases: List<UnrealPlanPhase>,
 )
 
-internal fun artifactCookDirectory(artifact: UnrealArtifactKey): Path = artifact.projectPath.parent
-    .resolve("Saved/UnrealHelper/Cooked")
-    .resolve(artifactDirectoryName(artifact))
+internal fun defaultCookDirectory(artifact: UnrealArtifactKey): Path = artifact.projectPath.parent
+    .resolve("Saved/Cooked")
     .resolve(cookPlatformName(artifact))
 
 internal fun artifactStageDirectory(artifact: UnrealArtifactKey): Path = artifact.projectPath.parent

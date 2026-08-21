@@ -51,17 +51,16 @@ internal class RiderUnrealPlannedActionExecutor(
             ),
         )
         is Cook -> processFactory.create(
-            UnrealCommandBuilder.cook(context(action.artifact, environment), action.mode, action.outputDirectory),
+            UnrealCommandBuilder.cook(context(action.artifact, environment), action.mode),
         )
         is Stage -> processFactory.create(
             UnrealCommandBuilder.stage(
-                context(action.artifact, environment), action.cookOutputDirectory, action.stagingDirectory,
+                context(action.artifact, environment), action.stagingDirectory,
             ),
         )
         is Package -> processFactory.create(
             UnrealCommandBuilder.packageProject(
-                context(action.artifact, environment), action.cookOutputDirectory,
-                action.stagingDirectory,
+                context(action.artifact, environment), action.stagingDirectory,
                 action.archiveDirectory ?: environment.packageDirectory.resolve(artifactDirectoryName(action.artifact)),
             ),
         )

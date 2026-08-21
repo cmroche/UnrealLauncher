@@ -124,16 +124,16 @@ class UnrealWorkflowPlannerTest {
             null,
         )
 
-        val cook = plan.actions<Cook>().single()
-        assertEquals(cook.outputDirectory, plan.actions<Launch>()[0].cookedSandbox)
-        assertEquals(cook.outputDirectory, plan.actions<Launch>()[1].cookedSandbox)
+        assertEquals(
+            Path.of("/Workspace/Lyra/Saved/Cooked/WindowsClient"),
+            plan.actions<Launch>()[0].cookedSandbox,
+        )
+        assertEquals(plan.actions<Launch>()[0].cookedSandbox, plan.actions<Launch>()[1].cookedSandbox)
         assertEquals(null, plan.actions<Launch>()[2].cookedSandbox)
-        assertTrue(cook.outputDirectory.toString().contains("LyraClient-Client-Win64-Shipping"))
-        assertTrue(cook.outputDirectory.endsWith("WindowsClient"))
     }
 
     @Test
-    fun `package actions isolate cook stage and archive paths per exact target`() {
+    fun `package actions isolate stage and archive paths per exact target`() {
         val plan = planner.plan(
             UnrealWorkflowRequest.PACKAGE,
             configuration(entry("LyraClient", "Win64"), entry("ShooterClient", "Win64")),
@@ -141,11 +141,9 @@ class UnrealWorkflowPlannerTest {
             null,
         )
 
-        val cooks = plan.actions<Cook>()
         val stages = plan.actions<Stage>()
         val packages = plan.actions<Package>()
         assertTrue(plan.actions<BuildBatch>().single().includePackagingTools)
-        assertEquals(2, cooks.map { it.outputDirectory }.distinct().size)
         assertEquals(2, stages.map { it.stagingDirectory }.distinct().size)
         assertEquals(2, packages.map { it.archiveDirectory }.distinct().size)
         assertEquals(stages.map { it.stagingDirectory }, packages.map { it.stagingDirectory })
