@@ -6,6 +6,8 @@ import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.ReadonlyStatusHandler
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
@@ -14,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicBoolean
@@ -22,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TargetPlatformConfigurationService private constructor(
     private val settings: UnrealHelperSettings,
     private val store: TargetPlatformConfigurationStorage,
+    private val ensureConfigurationFileWritable: (Path) -> Unit,
     private val snapshotChanged: () -> Unit,
 ) {
     @Volatile
@@ -36,6 +40,7 @@ class TargetPlatformConfigurationService private constructor(
     constructor(project: Project, coroutineScope: CoroutineScope) : this(
         settings = project.service<UnrealHelperSettings>(),
         store = TargetPlatformConfigurationStore(),
+        ensureConfigurationFileWritable = { path -> ensureConfigurationFileWritable(project, path) },
         snapshotChanged = { ActivityTracker.getInstance().inc() },
     ) {
         val requests = Channel<Unit>(Channel.CONFLATED)
@@ -96,6 +101,7 @@ class TargetPlatformConfigurationService private constructor(
         val path = configurationPath() ?: error(MissingWorkspaceRootMessage)
         synchronized(storageLock) {
             legacyMigrationAttempted.set(true)
+            ensureConfigurationFileWritable(path)
             publish(store.save(path, file))
         }
     }
@@ -258,7 +264,20 @@ class TargetPlatformConfigurationService private constructor(
         internal fun createForTest(
             settings: UnrealHelperSettings,
             store: TargetPlatformConfigurationStorage,
-        ): TargetPlatformConfigurationService = TargetPlatformConfigurationService(settings, store) {}
+            ensureConfigurationFileWritable: (Path) -> Unit = {},
+        ): TargetPlatformConfigurationService = TargetPlatformConfigurationService(
+            settings,
+            store,
+            ensureConfigurationFileWritable,
+        ) {}
+
+        private fun ensureConfigurationFileWritable(project: Project, path: Path) {
+            val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path) ?: return
+            val status = ReadonlyStatusHandler.getInstance(project).ensureFilesWritable(listOf(virtualFile))
+            if (status.hasReadonlyFiles()) {
+                throw IOException(status.readonlyFilesMessage)
+            }
+        }
 
         private fun sharedConfigurationPath(root: Path): Path =
             root.resolve(".unrealhelper").resolve("target-platforms.json").normalize()
