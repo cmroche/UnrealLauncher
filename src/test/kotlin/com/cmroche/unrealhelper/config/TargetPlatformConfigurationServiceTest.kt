@@ -6,6 +6,7 @@ import com.cmroche.unrealhelper.settings.UnrealTargetState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -82,6 +83,58 @@ class TargetPlatformConfigurationServiceTest {
             file,
             (service.load() as TargetPlatformConfigurationLoadResult.Loaded).file,
         )
+    }
+
+    @Test
+    fun `save requests VCS write access before replacing shared configuration`() {
+        val settings = settingsWithWorkspaceRoot()
+        val calls = mutableListOf<String>()
+        val storage = object : TargetPlatformConfigurationStorage {
+            override fun load(
+                path: Path,
+                discoveredTargets: List<UnrealTargetState>,
+            ): TargetPlatformConfigurationLoadResult = TargetPlatformConfigurationLoadResult.Missing(path)
+
+            override fun save(
+                path: Path,
+                file: TargetPlatformConfigurationsFile,
+            ): TargetPlatformConfigurationLoadResult.Loaded {
+                calls += "save"
+                return TargetPlatformConfigurationLoadResult.Loaded(path, file)
+            }
+        }
+        val service = TargetPlatformConfigurationService.createForTest(
+            settings,
+            storage,
+            ensureConfigurationFileWritable = { path -> calls += "write:$path" },
+        )
+
+        service.save(TargetPlatformConfigurationsFile())
+
+        assertEquals(
+            listOf("write:${service.configurationPath()}", "save"),
+            calls,
+        )
+    }
+
+    @Test
+    fun `save stops before storage when VCS write access fails`() {
+        val settings = settingsWithWorkspaceRoot()
+        val storage = CountingStorage(TargetPlatformConfigurationStore())
+        val service = TargetPlatformConfigurationService.createForTest(
+            settings,
+            storage,
+            ensureConfigurationFileWritable = { throw IllegalStateException("checkout rejected") },
+        )
+
+        try {
+            service.save(TargetPlatformConfigurationsFile())
+            fail("Expected VCS write access failure")
+        } catch (exception: IllegalStateException) {
+            assertEquals("checkout rejected", exception.message)
+        }
+
+        assertEquals(0, storage.saveCount)
     }
 
     @Test
