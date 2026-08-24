@@ -3,8 +3,20 @@ package com.cmroche.unrealhelper.settings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
+import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
 
 class UnrealHelperConfigurableTest {
+    @Test
+    fun `settings panel is named Unreal Launcher`() {
+        val document = DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder()
+            .parse(File("src/main/resources/META-INF/plugin.xml"))
+        val configurable = document.getElementsByTagName("projectConfigurable").item(0)
+
+        assertEquals("Unreal Launcher", configurable.attributes.getNamedItem("displayName").nodeValue)
+    }
+
     @Test
     fun `form values expose effective defaults and editor command line`() {
         val settings = UnrealHelperSettings().also {
