@@ -43,7 +43,7 @@ class ToolbarActionIconsTest {
     }
 
     @Test
-    fun `target platform configuration toolbar actions are registered`() {
+    fun `target platform selector is registered without standalone configure action`() {
         val pluginXml = File("src/main/resources/META-INF/plugin.xml")
         val document = DocumentBuilderFactory.newInstance()
             .newDocumentBuilder()
@@ -53,20 +53,33 @@ class ToolbarActionIconsTest {
             "com.cmroche.unrealhelper.ui.TargetPlatformConfigurationSelectorAction",
             actionClass(document, "UnrealHelper.TargetPlatformConfigurationSelectorAction"),
         )
-        assertEquals(
-            "com.cmroche.unrealhelper.ui.TargetPlatformConfigurationManageAction",
-            actionClass(document, "UnrealHelper.ManageTargetPlatformConfigurationsAction"),
-        )
-        assertEquals(
-            "com.intellij.icons.AllIcons.General.Settings",
-            actionIcon(document, "UnrealHelper.ManageTargetPlatformConfigurationsAction"),
-        )
-        assertEquals(
-            "Configure ...",
-            actionText(document, "UnrealHelper.ManageTargetPlatformConfigurationsAction"),
-        )
+        assertNull(actionClass(document, "UnrealHelper.ManageTargetPlatformConfigurationsAction"))
         assertNull(actionClass(document, "UnrealHelper.TargetTypesToolbarAction"))
         assertNull(actionClass(document, "UnrealHelper.PlatformsToolbarAction"))
+    }
+
+    @Test
+    fun `toolbar separates arguments from configuration and package from launch`() {
+        val pluginXml = File("src/main/resources/META-INF/plugin.xml")
+        val document = DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder()
+            .parse(pluginXml)
+
+        assertEquals(
+            listOf(
+                "UnrealHelper.GlobalArgsToolbarAction",
+                "separator",
+                "UnrealHelper.TargetPlatformConfigurationSelectorAction",
+                "UnrealHelper.BuildAction",
+                "UnrealHelper.CookAction",
+                "UnrealHelper.PackageAction",
+                "separator",
+                "UnrealHelper.LaunchAction",
+                "UnrealHelper.DebugAction",
+                "UnrealHelper.StopLaunchAction",
+            ),
+            groupEntries(document, "UnrealHelper.MainToolbarGroup"),
+        )
     }
 
     private fun actionClass(document: org.w3c.dom.Document, id: String): String? {
@@ -93,22 +106,27 @@ class ToolbarActionIconsTest {
         return null
     }
 
-    private fun actionText(document: org.w3c.dom.Document, id: String): String? {
-        val actions = document.getElementsByTagName("action")
-        for (index in 0 until actions.length) {
-            val action = actions.item(index) as org.w3c.dom.Element
-            if (action.getAttribute("id") == id) {
-                return action.getAttribute("text").takeIf { it.isNotBlank() }
-            }
-        }
-
-        return null
-    }
-
     private fun actionIndex(document: org.w3c.dom.Document, id: String): Int {
         val actions = document.getElementsByTagName("action")
         return (0 until actions.length).first { index ->
             (actions.item(index) as org.w3c.dom.Element).getAttribute("id") == id
         }
+    }
+
+    private fun groupEntries(document: org.w3c.dom.Document, id: String): List<String> {
+        val groups = document.getElementsByTagName("group")
+        val group = (0 until groups.length)
+            .map { groups.item(it) as org.w3c.dom.Element }
+            .first { it.getAttribute("id") == id }
+
+        return (0 until group.childNodes.length)
+            .mapNotNull { group.childNodes.item(it) as? org.w3c.dom.Element }
+            .mapNotNull { element ->
+                when (element.tagName) {
+                    "action" -> element.getAttribute("id")
+                    "separator" -> "separator"
+                    else -> null
+                }
+            }
     }
 }
