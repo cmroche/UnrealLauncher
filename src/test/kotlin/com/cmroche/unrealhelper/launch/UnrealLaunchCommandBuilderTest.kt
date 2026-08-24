@@ -27,9 +27,9 @@ class UnrealLaunchCommandBuilderTest {
     }
     @Test
     fun `engine launch passes project before entry and global arguments`() {
-        val engineRoot = Path.of("/Workspace/UnrealEngine")
+        val engineRoot = Path.of("/Workspace/UnrealEngine/Engine")
         val projectPath = Path.of("/Workspace/Lyra/Lyra.uproject")
-        val executable = engineRoot.resolve("Engine/Binaries/Mac/UnrealEditor")
+        val executable = engineRoot.resolve("Binaries/Mac/UnrealEditor")
         val artifact = ResolvedLaunchArtifact(
             receiptPath = Path.of("/Workspace/Lyra/Binaries/Mac/LyraEditor.target"),
             executable = executable,
@@ -63,7 +63,7 @@ class UnrealLaunchCommandBuilderTest {
 
     @Test
     fun `project executable omits project argument`() {
-        val engineRoot = Path.of("/Workspace/UnrealEngine")
+        val engineRoot = Path.of("/Workspace/UnrealEngine/Engine")
         val projectPath = Path.of("/Workspace/Lyra/Lyra.uproject")
         val executable = Path.of("/Workspace/Lyra/Binaries/Linux/LyraServer")
         val artifact = ResolvedLaunchArtifact(
@@ -88,8 +88,8 @@ class UnrealLaunchCommandBuilderTest {
 
     @Test
     fun `project executable under engine checkout omits project argument`() {
-        val engineRoot = Path.of("/Workspace/UnrealEngine")
-        val projectRoot = engineRoot.resolve("Samples/Games/Lyra")
+        val engineRoot = Path.of("/Workspace/UnrealEngine/Engine")
+        val projectRoot = engineRoot.parent.resolve("Samples/Games/Lyra")
         val projectPath = projectRoot.resolve("Lyra.uproject")
         val executable = projectRoot.resolve("Binaries/Mac/Lyra")
         val artifact = ResolvedLaunchArtifact(
@@ -114,7 +114,7 @@ class UnrealLaunchCommandBuilderTest {
 
     private fun artifact(): ResolvedLaunchArtifact {
         val projectPath = Path.of("/Workspace/Lyra/Lyra.uproject")
-        val engineRoot = Path.of("/Workspace/UnrealEngine")
+        val engineRoot = Path.of("/Workspace/UnrealEngine/Engine")
         val executable = Path.of("/Workspace/Lyra/Binaries/Win64/LyraClient.exe")
         return ResolvedLaunchArtifact(Path.of("/receipt.target"), executable, projectPath, executable.parent, engineRoot)
     }

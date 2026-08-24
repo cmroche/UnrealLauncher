@@ -39,7 +39,7 @@ internal object UnrealTargetReceiptResolver {
         val normalizedEngineRoot = engineRoot.toAbsolutePath().normalize()
         val searchRoots = listOf(
             normalizedProjectRoot.resolve("Binaries").resolve(key.platform),
-            normalizedEngineRoot.resolve("Engine/Binaries").resolve(key.platform),
+            normalizedEngineRoot.resolve("Binaries").resolve(key.platform),
         )
         val candidates = searchRoots.asSequence().map { root ->
             receiptCandidates(root)
@@ -116,7 +116,7 @@ internal object UnrealTargetReceiptResolver {
         engineRoot: Path,
     ): Path {
         val expanded = value
-            .replace("\$(EngineDir)", engineRoot.resolve("Engine").toString())
+            .replace("\$(EngineDir)", engineRoot.toString())
             .replace("\$(ProjectDir)", projectRoot.toString())
         val path = Path.of(expanded)
         return (if (path.isAbsolute) path else receiptPath.parent.resolve(path))

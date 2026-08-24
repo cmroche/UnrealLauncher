@@ -97,7 +97,7 @@ class UnrealPlannedActionExecutorTest {
             receiptResolver = { key, projectRoot, engineRoot ->
                 assertEquals("LyraClient", key.targetName)
                 assertEquals(Path.of("/Workspace/Lyra"), projectRoot)
-                assertEquals(Path.of("/Engines/UE_5.6"), engineRoot)
+                assertEquals(Path.of("/Engines/UE_5.6/Engine"), engineRoot)
                 ResolvedLaunchArtifact(
                     receiptPath = executable.resolveSibling("LyraClient.target"),
                     executable = executable,
@@ -161,12 +161,12 @@ class UnrealPlannedActionExecutorTest {
 
     private fun settings() = UnrealHelperSettings().also {
         it.state.workspaceRoot = "/Workspace/Lyra"
-        it.state.engineRoot = "/Engines/UE_5.6"
+        it.state.engineRoot = "/Engines/UE_5.6/Engine"
         it.state.packageDirectory = "/Artifacts/Lyra"
     }
 
     private fun environment() = UnrealExecutionEnvironment(
-        engineRoot = Path.of("/Engines/UE_5.6"),
+        engineRoot = Path.of("/Engines/UE_5.6/Engine"),
         workspaceRoot = Path.of("/Workspace/Lyra"),
         packageDirectory = Path.of("/Artifacts/Lyra"),
     )

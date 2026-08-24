@@ -66,7 +66,7 @@ object UnrealProjectDiscovery {
         return UnrealProjectDiscoveryResult(
             workspaceRoot = workspaceRoot?.toString(),
             uprojectPath = normalizedProject?.toString(),
-            engineRoot = engineRoot?.toAbsolutePath()?.normalize()?.toString(),
+            engineRoot = engineRoot?.let(::normalizeEngineRoot)?.toString(),
             targets = targets,
             platforms = normalizedPlatforms,
             warnings = warnings.distinct(),

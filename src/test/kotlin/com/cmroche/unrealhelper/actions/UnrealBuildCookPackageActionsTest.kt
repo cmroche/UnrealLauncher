@@ -226,11 +226,10 @@ class UnrealBuildCookPackageActionsTest {
 
     private fun filesystemState(): UnrealHelperSettingsState {
         val workspace = temp.newFolder().toPath()
-        val engineRoot = Files.createDirectories(workspace.resolve("EngineRoot"))
+        val engineRoot = Files.createDirectories(workspace.resolve("UnrealEngine/Engine"))
         Files.createFile(workspace.resolve("Lyra.uproject"))
         val ubt = engineRoot.resolve(
             Path.of(
-                "Engine",
                 "Binaries",
                 "DotNET",
                 "UnrealBuildTool",
@@ -253,7 +252,7 @@ class UnrealBuildCookPackageActionsTest {
     private fun state() = UnrealHelperSettingsState().also { state ->
         state.uprojectPath = "/Workspace/Lyra/Lyra.uproject"
         state.workspaceRoot = "/Workspace/Lyra"
-        state.engineRoot = "/Engines/UE_5.6"
+        state.engineRoot = "/Engines/UE_5.6/Engine"
         state.packageDirectory = "/Artifacts/Lyra"
         state.discoveredPlatforms = mutableListOf("Win64")
         state.discoveredTargets = mutableListOf(

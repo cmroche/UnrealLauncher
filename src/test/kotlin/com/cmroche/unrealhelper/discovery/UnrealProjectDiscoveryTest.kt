@@ -33,14 +33,14 @@ class UnrealProjectDiscoveryTest {
 
         val result = UnrealProjectDiscovery.fromRiderModel(
             uprojectPath = projectFile,
-            engineRoot = root.parent.resolve("UnrealEngine"),
+            engineRoot = root.parent.resolve("UnrealEngine/Engine"),
             targetFiles = listOf(gameTarget, clientTarget),
             platforms = listOf("Win64", "Mac", "Win64"),
         )
 
         assertEquals(root.toString(), result.workspaceRoot)
         assertEquals(projectFile.toString(), result.uprojectPath)
-        assertEquals(root.parent.resolve("UnrealEngine").toString(), result.engineRoot)
+        assertEquals(root.parent.resolve("UnrealEngine/Engine").toString(), result.engineRoot)
         assertEquals(
             listOf(
                 DiscoveredUnrealTarget("MyGame", UnrealTargetType.Game),
@@ -50,6 +50,23 @@ class UnrealProjectDiscoveryTest {
         )
         assertEquals(listOf("Mac", "Win64"), result.platforms)
         assertTrue(result.warnings.isEmpty())
+    }
+
+    @Test
+    fun `normalizes a legacy checkout root to its Engine directory`() {
+        val checkoutRoot = temporaryFolder.newFolder("UnrealEngine").toPath()
+        val engineRoot = Files.createDirectories(checkoutRoot.resolve("Engine/Build/BatchFiles"))
+            .parent
+            .parent
+
+        val result = UnrealProjectDiscovery.fromRiderModel(
+            uprojectPath = null,
+            engineRoot = checkoutRoot,
+            targetFiles = emptyList(),
+            platforms = emptyList(),
+        )
+
+        assertEquals(engineRoot.toString(), result.engineRoot)
     }
 
     @Test

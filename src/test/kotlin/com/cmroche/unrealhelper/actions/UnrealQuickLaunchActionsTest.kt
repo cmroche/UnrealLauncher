@@ -106,7 +106,7 @@ class UnrealQuickLaunchActionsTest {
     private fun state() = UnrealHelperSettingsState().also { state ->
         state.uprojectPath = "/Workspace/Lyra/Lyra.uproject"
         state.workspaceRoot = "/Workspace/Lyra"
-        state.engineRoot = "/Engines/UE_5.6"
+        state.engineRoot = "/Engines/UE_5.6/Engine"
         state.discoveredPlatforms = mutableListOf("Win64")
         state.discoveredTargets = mutableListOf(
             UnrealTargetState().also {

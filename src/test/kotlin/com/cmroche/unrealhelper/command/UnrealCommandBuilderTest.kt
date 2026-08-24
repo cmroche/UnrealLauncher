@@ -230,7 +230,7 @@ class UnrealCommandBuilderTest {
 
     private fun context(
         uprojectPath: Path = Path.of("/Workspace/Lyra/Lyra.uproject"),
-        engineRoot: Path = Path.of("/Engines/UE_5.6"),
+        engineRoot: Path = Path.of("/Engines/UE_5.6/Engine"),
         workspaceRoot: Path = Path.of("/Workspace/Lyra"),
         packageDirectory: Path = Path.of("/Workspace/Lyra/Packages"),
         buildConfiguration: String = "Development",

@@ -263,6 +263,21 @@ class UnrealWorkflowPreflightValidatorTest {
     }
 
     @Test
+    fun `legacy saved checkout root resolves to its Engine directory before validation`() {
+        val fixture = fixture()
+        fixture.state.engineRoot = Path.of(fixture.state.engineRoot).parent.toString()
+
+        val errors = validator().validate(
+            UnrealWorkflowRequest.BUILD,
+            fixture.configuration,
+            fixture.state,
+            fixture.workspace.toString(),
+        )
+
+        assertTrue(errors.isEmpty())
+    }
+
+    @Test
     fun `malformed package destination is irrelevant without package phase`() {
         listOf(
             UnrealWorkflowRequest.BUILD,
@@ -325,7 +340,7 @@ class UnrealWorkflowPreflightValidatorTest {
     ): Fixture {
         val workspace = temp.newFolder().toPath()
         val project = Files.createFile(workspace.resolve("Lyra.uproject"))
-        val engineRoot = Files.createDirectories(workspace.resolve("EngineRoot"))
+        val engineRoot = Files.createDirectories(workspace.resolve("UnrealEngine/Engine"))
         val packageDirectory = Files.createDirectories(workspace.resolve("Packages"))
         if (createUbt) createTool(engineRoot, ubtRelativePath())
         if (createUat) createTool(engineRoot, uatRelativePath())
@@ -363,7 +378,6 @@ class UnrealWorkflowPreflightValidatorTest {
     }
 
     private fun ubtRelativePath(): Path = Path.of(
-        "Engine",
         "Binaries",
         "DotNET",
         "UnrealBuildTool",
@@ -371,7 +385,6 @@ class UnrealWorkflowPreflightValidatorTest {
     )
 
     private fun uatRelativePath(): Path = Path.of(
-        "Engine",
         "Build",
         "BatchFiles",
         if (isWindows()) "RunUAT.bat" else "RunUAT.sh",
