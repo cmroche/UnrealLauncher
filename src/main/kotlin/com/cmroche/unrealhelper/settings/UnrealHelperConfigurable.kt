@@ -27,7 +27,7 @@ class UnrealHelperConfigurable(private val project: Project) : SearchableConfigu
 
     override fun getId(): String = "com.cmroche.unrealhelper.settings"
 
-    override fun getDisplayName(): String = "UnrealHelper"
+    override fun getDisplayName(): String = "Unreal Launcher"
 
     override fun createComponent(): JComponent {
         val form = SettingsForm()
