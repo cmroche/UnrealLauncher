@@ -61,6 +61,7 @@
           class="com.cmroche.unrealhelper.ui.GlobalArgsToolbarAction"
           text="UnrealHelper Args"
           description="Edit UnrealHelper global launch arguments"/>
+      <separator/>
       <action
           id="UnrealHelper.TargetPlatformConfigurationSelectorAction"
           class="com.cmroche.unrealhelper.ui.TargetPlatformConfigurationSelectorAction"
@@ -84,6 +85,7 @@
           text="Package"
           description="Package selected Unreal targets"
           icon="/icons/package.svg"/>
+      <separator/>
       <action
           id="UnrealHelper.LaunchAction"
           class="com.cmroche.unrealhelper.actions.UnrealLaunchAction"
@@ -102,12 +104,6 @@
           text="Stop"
           description="Stop selected UnrealHelper launches"
           icon="com.intellij.icons.AllIcons.Actions.Suspend"/>
-      <action
-          id="UnrealHelper.ManageTargetPlatformConfigurationsAction"
-          class="com.cmroche.unrealhelper.ui.TargetPlatformConfigurationManageAction"
-          text="Configure ..."
-          description="Create, modify, and delete shared Target &amp; Platform configurations"
-          icon="com.intellij.icons.AllIcons.General.Settings"/>
     </group>
   </actions>
 </idea-plugin>
