@@ -90,9 +90,7 @@ class UnrealHelperSettings : PersistentStateComponent<UnrealHelperSettingsState>
         if (state.packageDirectory.isBlank()) {
             state.packageDirectory = defaultPackageDirectory(state.workspaceRoot)
         }
-        if (state.engineRoot.isBlank()) {
-            state.engineRoot = result.engineRoot.orEmpty()
-        }
+        result.engineRoot?.takeIf(String::isNotBlank)?.let { state.engineRoot = it }
         if (state.selectedPlatforms.isEmpty() && result.platforms.isNotEmpty()) {
             state.selectedPlatforms = result.platforms.toMutableList()
         }
@@ -108,7 +106,7 @@ class UnrealHelperSettings : PersistentStateComponent<UnrealHelperSettingsState>
     fun hasConfiguredProject(): Boolean = state.uprojectPath.isNotBlank()
 
     companion object {
-        const val CurrentDiscoveryVersion = 2
+        const val CurrentDiscoveryVersion = 3
         const val DefaultBuildConfiguration = "Development"
         val BuildConfigurations: List<String> = listOf("Debug", "DebugGame", "Development", "Test", "Shipping")
 

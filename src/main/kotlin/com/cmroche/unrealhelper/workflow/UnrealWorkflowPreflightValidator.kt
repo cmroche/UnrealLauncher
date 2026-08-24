@@ -126,14 +126,12 @@ class UnrealWorkflowPreflightValidator(
     }
 
     private fun unrealBuildToolPath(engineRoot: Path): Path = engineRoot
-        .resolve("Engine")
         .resolve("Binaries")
         .resolve("DotNET")
         .resolve("UnrealBuildTool")
         .resolve(if (isWindows()) "UnrealBuildTool.exe" else "UnrealBuildTool")
 
     private fun runUatPath(engineRoot: Path): Path = engineRoot
-        .resolve("Engine")
         .resolve("Build")
         .resolve("BatchFiles")
         .resolve(if (isWindows()) "RunUAT.bat" else "RunUAT.sh")

@@ -19,7 +19,7 @@ object UnrealCommandBuilder {
         }
         val first = contexts.first()
         val installedEngine = isEngineInstalled
-            ?: Files.exists(first.engineRoot.resolve("Engine/Build/InstalledBuild.txt"))
+            ?: Files.exists(first.engineRoot.resolve("Build/InstalledBuild.txt"))
         val packagingTargets = if (includePackagingTools && !installedEngine) {
             listOf(
                 "-Target=UnrealPak ${hostPlatform(osName)} Development " +
@@ -121,16 +121,14 @@ object UnrealCommandBuilder {
         }
 
     private fun unrealBuildTool(engineRoot: Path, osName: String): String =
-        engineRoot.resolve("Engine")
-            .resolve("Binaries")
+        engineRoot.resolve("Binaries")
             .resolve("DotNET")
             .resolve("UnrealBuildTool")
             .resolve(if (isWindows(osName)) "UnrealBuildTool.exe" else "UnrealBuildTool")
             .toString()
 
     private fun runUat(engineRoot: Path, osName: String): String =
-        engineRoot.resolve("Engine")
-            .resolve("Build")
+        engineRoot.resolve("Build")
             .resolve("BatchFiles")
             .resolve(if (isWindows(osName)) "RunUAT.bat" else "RunUAT.sh")
             .toString()

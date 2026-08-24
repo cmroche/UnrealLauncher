@@ -3,6 +3,7 @@ package com.cmroche.unrealhelper.workflow
 import com.cmroche.unrealhelper.config.ResolvedTargetPlatformEntry
 import com.cmroche.unrealhelper.config.TargetPlatformConfiguration
 import com.cmroche.unrealhelper.config.resolveConfigurationEntries
+import com.cmroche.unrealhelper.discovery.normalizeEngineRoot
 import com.cmroche.unrealhelper.settings.UnrealHelperSettings
 import com.cmroche.unrealhelper.settings.UnrealHelperSettingsState
 import java.nio.file.Files
@@ -54,7 +55,7 @@ internal object UnrealWorkflowInputResolver {
             !Files.isDirectory(workspaceRoot) -> errors += "Workspace root was not found at $workspaceRoot"
         }
 
-        val engineRoot = pathOrNull(state.engineRoot, allowBlank = true)
+        val engineRoot = pathOrNull(state.engineRoot, allowBlank = true)?.let(::normalizeEngineRoot)
         when {
             state.engineRoot.isBlank() -> errors += "Engine root is not configured"
             engineRoot == null -> errors += "Engine root path is invalid: ${state.engineRoot}"

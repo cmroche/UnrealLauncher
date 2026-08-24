@@ -41,6 +41,7 @@ class UnrealProjectStartupActivityTest {
     @Test
     fun `startup discovery refreshes fully configured project with legacy discovery`() {
         val settings = UnrealHelperSettings()
+        settings.state.discoveryVersion = 2
         settings.state.uprojectPath = "/Project/Lyra/Lyra.uproject"
         settings.state.engineRoot = "/Project/UnrealEngine"
 
@@ -48,11 +49,11 @@ class UnrealProjectStartupActivityTest {
     }
 
     @Test
-    fun `startup discovery does not overwrite fully configured project with current discovery`() {
+    fun `startup discovery skips fully configured project with current discovery`() {
         val settings = UnrealHelperSettings()
         settings.state.discoveryVersion = UnrealHelperSettings.CurrentDiscoveryVersion
         settings.state.uprojectPath = "/Project/Lyra/Lyra.uproject"
-        settings.state.engineRoot = "/Project/UnrealEngine"
+        settings.state.engineRoot = "/Project/UnrealEngine/Engine"
 
         assertFalse(shouldRefreshProjectOnStartup(settings))
     }

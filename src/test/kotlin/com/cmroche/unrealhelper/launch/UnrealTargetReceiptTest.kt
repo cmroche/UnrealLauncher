@@ -28,7 +28,7 @@ class UnrealTargetReceiptTest {
             engineRoot = roots.engineRoot,
         )
 
-        val executable = roots.engineRoot.resolve("Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor")
+        val executable = roots.engineRoot.resolve("Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor")
         assertEquals(receiptPath, artifact.receiptPath)
         assertEquals(executable, artifact.executable)
         assertEquals(roots.projectRoot.resolve("Lyra.uproject"), artifact.projectPath)
@@ -134,7 +134,7 @@ class UnrealTargetReceiptTest {
     fun `prefers an exact project receipt over an exact engine receipt`() {
         val roots = roots()
         val projectReceipt = roots.projectRoot.resolve("Binaries/Mac/LyraEditor.target")
-        val engineReceipt = roots.engineRoot.resolve("Engine/Binaries/Mac/LyraEditor.target")
+        val engineReceipt = roots.engineRoot.resolve("Binaries/Mac/LyraEditor.target")
         writeReceipt(
             projectReceipt,
             targetName = "LyraEditor",
@@ -168,7 +168,7 @@ class UnrealTargetReceiptTest {
     fun `reports both receipt search roots when no exact receipt exists`() {
         val roots = roots()
         val projectSearchRoot = Files.createDirectories(roots.projectRoot.resolve("Binaries/Mac"))
-        val engineSearchRoot = Files.createDirectories(roots.engineRoot.resolve("Engine/Binaries/Mac"))
+        val engineSearchRoot = Files.createDirectories(roots.engineRoot.resolve("Binaries/Mac"))
         writeReceipt(
             projectSearchRoot.resolve("LyraEditor.target"),
             targetName = "LyraEditor",
@@ -192,7 +192,7 @@ class UnrealTargetReceiptTest {
     private fun roots(): TestRoots {
         val root = Files.createTempDirectory("unreal-target-receipt")
         val projectRoot = Files.createDirectories(root.resolve("Lyra"))
-        val engineRoot = Files.createDirectories(root.resolve("UnrealEngine"))
+        val engineRoot = Files.createDirectories(root.resolve("UnrealEngine/Engine"))
         Files.createFile(projectRoot.resolve("Lyra.uproject"))
         return TestRoots(projectRoot, engineRoot)
     }

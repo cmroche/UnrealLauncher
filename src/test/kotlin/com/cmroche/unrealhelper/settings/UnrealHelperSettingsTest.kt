@@ -259,9 +259,9 @@ class UnrealHelperSettingsTest {
     }
 
     @Test
-    fun `discovery keeps configured engine root`() {
+    fun `discovery replaces a saved legacy engine parent with the Rider engine root`() {
         val settings = UnrealHelperSettings()
-        settings.state.engineRoot = "/Custom/Engine"
+        settings.state.engineRoot = "/Project"
 
         settings.applyDiscoveryResult(
             UnrealProjectDiscoveryResult(
@@ -274,13 +274,14 @@ class UnrealHelperSettingsTest {
             ),
         )
 
-        assertEquals("/Custom/Engine", settings.state.engineRoot)
+        assertEquals("/Project/Engine", settings.state.engineRoot)
     }
 
     @Test
     fun `discovery keeps existing package directory and selected platforms`() {
         val settings = UnrealHelperSettings()
         settings.state.packageDirectory = "/Custom/Packages"
+        settings.state.engineRoot = "/Existing/Engine"
         settings.state.selectedPlatforms = mutableListOf("Win64")
 
         settings.applyDiscoveryResult(
@@ -295,6 +296,7 @@ class UnrealHelperSettingsTest {
         )
 
         assertEquals("/Custom/Packages", settings.state.packageDirectory)
+        assertEquals("/Existing/Engine", settings.state.engineRoot)
         assertEquals(listOf("Win64"), settings.state.selectedPlatforms)
     }
 
