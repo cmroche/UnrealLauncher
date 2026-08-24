@@ -1,0 +1,149 @@
+name: Publish Marketplace Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Target GitHub Release version; blank uses the latest release
+        required: false
+        type: string
+      previous_version:
+        description: Marketplace baseline override for hidden or unlisted uploads
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketplace-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Submit Marketplace Update
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    environment: jetbrains-marketplace
+
+    steps:
+      - name: Checkout release automation
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install and test release automation
+        run: |
+          npm ci
+          npm test
+
+      - name: Preserve exact-tag publishing support
+        run: |
+          cp .github/scripts/prepare-marketplace-release.mjs "$RUNNER_TEMP/prepare-marketplace-release.mjs"
+          cp .github/scripts/marketplace-publish.init.gradle "$RUNNER_TEMP/marketplace-publish.init.gradle"
+
+      - name: Prepare cumulative Marketplace change notes
+        id: prepare
+        env:
+          CHANGE_NOTES_FILE: ${{ runner.temp }}/marketplace-change-notes.html
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
+          TARGET_VERSION: ${{ inputs.version }}
+        run: node "$RUNNER_TEMP/prepare-marketplace-release.mjs"
+
+      - name: Require Marketplace token
+        if: steps.prepare.outputs.should_publish == 'true'
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+        run: |
+          if [[ -z "$PUBLISH_TOKEN" ]]; then
+            echo "PUBLISH_TOKEN is not configured in the jetbrains-marketplace environment or repository secrets." >&2
+            exit 1
+          fi
+
+      - name: Check out exact release tag
+        if: steps.prepare.outputs.should_publish == 'true'
+        env:
+          PREVIOUS_VERSION: ${{ steps.prepare.outputs.previous_version }}
+          TARGET_VERSION: ${{ steps.prepare.outputs.target_version }}
+        run: |
+          git show-ref --verify --quiet "refs/tags/v$PREVIOUS_VERSION" || {
+            echo "Marketplace baseline tag v$PREVIOUS_VERSION does not exist." >&2
+            exit 1
+          }
+          git show-ref --verify --quiet "refs/tags/v$TARGET_VERSION" || {
+            echo "Target tag v$TARGET_VERSION does not exist." >&2
+            exit 1
+          }
+          git merge-base --is-ancestor "v$PREVIOUS_VERSION" "v$TARGET_VERSION" || {
+            echo "Marketplace baseline v$PREVIOUS_VERSION is not an ancestor of v$TARGET_VERSION." >&2
+            exit 1
+          }
+          git checkout --detach "v$TARGET_VERSION"
+
+      - name: Set up Java
+        if: steps.prepare.outputs.should_publish == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        if: steps.prepare.outputs.should_publish == 'true'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-home-cache-excludes: |
+            caches/*/transforms/**
+            caches/transforms-*/**
+
+      - name: Build and verify exact release
+        if: steps.prepare.outputs.should_publish == 'true'
+        env:
+          TARGET_VERSION: ${{ steps.prepare.outputs.target_version }}
+        run: |
+          ./gradlew \
+            --init-script "$RUNNER_TEMP/marketplace-publish.init.gradle" \
+            clean test verifyPlugin verifyReleaseArtifact \
+            -PpluginVersion="$TARGET_VERSION" \
+            -PmarketplaceChangeNotesFile="$RUNNER_TEMP/marketplace-change-notes.html"
+
+      - name: Recheck Marketplace state
+        if: steps.prepare.outputs.should_publish == 'true'
+        id: recheck
+        env:
+          CHANGE_NOTES_FILE: ${{ runner.temp }}/marketplace-change-notes-recheck.html
+          EXPECTED_MARKETPLACE_VERSION: ${{ steps.prepare.outputs.marketplace_version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
+          TARGET_VERSION: ${{ steps.prepare.outputs.target_version }}
+        run: node "$RUNNER_TEMP/prepare-marketplace-release.mjs"
+
+      - name: Verify change notes stayed stable
+        if: steps.prepare.outputs.should_publish == 'true'
+        env:
+          INITIAL_NOTES_SHA256: ${{ steps.prepare.outputs.notes_sha256 }}
+          RECHECKED_NOTES_SHA256: ${{ steps.recheck.outputs.notes_sha256 }}
+        run: |
+          if [[ "$INITIAL_NOTES_SHA256" != "$RECHECKED_NOTES_SHA256" ]]; then
+            echo "GitHub release notes changed while the Marketplace archive was being built." >&2
+            exit 1
+          fi
+
+      - name: Submit update for Marketplace review
+        if: steps.prepare.outputs.should_publish == 'true'
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          TARGET_VERSION: ${{ steps.prepare.outputs.target_version }}
+        run: |
+          ./gradlew \
+            --init-script "$RUNNER_TEMP/marketplace-publish.init.gradle" \
+            publishPlugin \
+            -PpluginVersion="$TARGET_VERSION" \
+            -PmarketplaceChangeNotesFile="$RUNNER_TEMP/marketplace-change-notes.html"

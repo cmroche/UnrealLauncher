@@ -1,0 +1,64 @@
+import java.nio.charset.StandardCharsets
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+
+allprojects {
+    pluginManager.withPlugin("org.jetbrains.intellij.platform") {
+        def notesPath = providers.gradleProperty("marketplaceChangeNotesFile").orNull
+        if (!notesPath) {
+            throw new GradleException("-PmarketplaceChangeNotesFile is required for Marketplace publishing")
+        }
+
+        def notesFile = file(notesPath)
+        def changeNotes = providers.provider { notesFile.getText("UTF-8") }
+
+        tasks.named("patchPluginXml") {
+            it.changeNotes = changeNotes
+        }
+
+        tasks.named("publishPlugin") {
+            it.channels = ["default"]
+        }
+
+        afterEvaluate {
+            tasks.named("verifyReleaseArtifact") {
+                doLast {
+                    def expectedNotes = notesFile.getText("UTF-8").trim()
+                    def archive = tasks.named("buildPlugin").get().archiveFile.get().asFile
+                    def pluginXml = null
+
+                    new ZipFile(archive).withCloseable { distributionZip ->
+                        def pluginJar = distributionZip.entries().find { entry ->
+                            entry.name.startsWith("UnrealHelper/lib/UnrealHelper-") && entry.name.endsWith(".jar")
+                        }
+                        if (pluginJar == null) {
+                            throw new GradleException("Marketplace archive does not contain the UnrealHelper plugin JAR")
+                        }
+
+                        new ZipInputStream(distributionZip.getInputStream(pluginJar)).withCloseable { pluginJarZip ->
+                            def entry
+                            while ((entry = pluginJarZip.nextEntry) != null) {
+                                if (entry.name == "META-INF/plugin.xml") {
+                                    pluginXml = new String(pluginJarZip.readAllBytes(), StandardCharsets.UTF_8)
+                                    break
+                                }
+                            }
+                        }
+                    }
+
+                    if (pluginXml == null) {
+                        throw new GradleException("Marketplace archive plugin JAR does not contain META-INF/plugin.xml")
+                    }
+
+                    def match = pluginXml =~ /(?s)<change-notes>\s*<!\[CDATA\[(.*?)]]>\s*<\/change-notes>/
+                    if (!match.find()) {
+                        throw new GradleException("Packaged plugin.xml does not contain CDATA change notes")
+                    }
+                    if (match.group(1).trim() != expectedNotes) {
+                        throw new GradleException("Packaged Marketplace change notes do not match the generated changelog")
+                    }
+                }
+            }
+        }
+    }
+}
